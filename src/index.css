@@ -1,0 +1,141 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+/* ===== APP THEME (global) =====
+   - Keep rule set small and targeted
+   - Background is fixed and non-repeating
+   - Navbar uses --nav-bg and is slightly lighter than page
+*/
+
+:root {
+  --nav-bg: #0b1a36;
+  /* navbar tone (slightly lighter) */
+  --page-top: #07102a;
+  /* top area (hero) */
+  --page-mid: #05061a;
+  /* main page mid tone */
+  --page-bottom: #030416;
+  /* footer tone (darkest) */
+  --panel: rgba(255, 255, 255, 0.03);
+  --muted: #94a3b8;
+  --text: #e6eef8;
+  --accent-1: #6366f1;
+  --accent-2: #06b6d4;
+}
+
+/* fixed page background — prevents repeating while scrolling */
+/* ===== APP THEME (global) =====
+   (unchanged above this line)
+*/
+
+/* fixed page background — prevents repeating while scrolling */
+.app-background {
+  background-image:
+    linear-gradient(180deg, var(--nav-bg), rgba(11, 26, 54, 0.92) 12%, rgba(7, 16, 42, 0.88) 36%, rgba(5, 6, 26, 0.94) 78%, var(--page-bottom));
+  background-attachment: fixed;
+  background-size: cover;
+  background-position: top center;
+  color: var(--text);
+  min-height: 100vh;
+}
+
+/* navbar */
+.app-navbar {
+  background: linear-gradient(180deg, rgba(255, 255, 255, 0.03), rgba(255, 255, 255, 0.02));
+  border-bottom: 1px solid rgba(255, 255, 255, 0.04);
+  backdrop-filter: blur(6px);
+  box-shadow: 0 6px 18px rgba(2, 6, 23, 0.5);
+}
+
+/* =========================================
+   FIX: app-shell should NOT always have padding
+   Home page needs ZERO padding on top.
+   ========================================= */
+.app-shell {
+  min-height: 100vh;
+  padding-top: 0 !important;
+  /* remove unwanted space */
+}
+
+/* Add padding *only* when navbar is visible */
+.with-navbar {
+  padding-top: 56px !important;
+  /* matches navbar height */
+}
+
+/* footer tone */
+.app-footer {
+  background: linear-gradient(180deg, rgba(2, 4, 12, 0.06), rgba(2, 2, 8, 0.12));
+  border-top: 1px solid rgba(255, 255, 255, 0.03);
+}
+
+/* panel-3d */
+.panel-3d {
+  background: linear-gradient(180deg, rgba(255, 255, 255, 0.02), rgba(255, 255, 255, 0.01));
+  border: 1px solid rgba(255, 255, 255, 0.04);
+  box-shadow: 0 8px 30px rgba(2, 6, 23, 0.55);
+  border-radius: 12px;
+  transition: transform .22s ease, box-shadow .22s ease;
+}
+
+.panel-3d:hover {
+  transform: translateY(-6px) scale(1.006);
+}
+
+/* accent button */
+.btn-accent {
+  background: linear-gradient(90deg, var(--accent-1), var(--accent-2));
+  color: white;
+  padding: .5rem .9rem;
+  border-radius: 10px;
+  box-shadow: 0 8px 28px rgba(6, 182, 212, 0.06);
+}
+
+/* dark input helpers */
+.dark-input,
+.dark-textarea,
+.dark-select {
+  color: var(--text) !important;
+  caret-color: var(--text) !important;
+  background-color: rgba(255, 255, 255, 0.035) !important;
+  border: 1px solid rgba(255, 255, 255, 0.06) !important;
+  -webkit-text-fill-color: var(--text) !important;
+}
+
+.dark-input::placeholder,
+.dark-textarea::placeholder {
+  color: rgba(230, 238, 248, 0.56) !important;
+}
+
+/* hero section */
+.app-hero {
+  min-height: 420px;
+  border-radius: 12px;
+  overflow: hidden;
+  position: relative;
+}
+
+/* small utility */
+.text-dim {
+  color: var(--muted);
+}
+
+@keyframes fade-in {
+  from { opacity: 0; transform: translateY(-4px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+.animate-fade-in {
+  animation: fade-in 0.25s ease-out;
+}
+
+@keyframes fadeUp {
+  from {
+    opacity: 0;
+    transform: translateY(6px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
