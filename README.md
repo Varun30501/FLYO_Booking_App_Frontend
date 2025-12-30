@@ -1,16 +1,139 @@
-# React + Vite
+✈️ FlyO – Flight Booking & Reservation System (Frontend)
 
-This template provides a minimal setup to get React working in Vite with HMR and some ESLint rules.
+FlyO is a modern flight booking web application built using React (Vite) and TailwindCSS, providing users with an intuitive interface to search, compare, and book flights.
 
-Currently, two official plugins are available:
+This frontend connects to a MERN-based backend that handles flight search, bookings, payments, and notifications.
 
-- [@vitejs/plugin-react](https://github.com/vitejs/vite-plugin-react/blob/main/packages/plugin-react) uses [Babel](https://babeljs.io/) (or [oxc](https://oxc.rs) when used in [rolldown-vite](https://vite.dev/guide/rolldown)) for Fast Refresh
-- [@vitejs/plugin-react-swc](https://github.com/vitejs/vite-plugin-react/blob/main/packages/plugin-react-swc) uses [SWC](https://swc.rs/) for Fast Refresh
+🔧 Tech Stack
 
-## React Compiler
+React (Vite)
 
-The React Compiler is not enabled on this template because of its impact on dev & build performances. To add it, see [this documentation](https://react.dev/learn/react-compiler/installation).
+TailwindCSS
 
-## Expanding the ESLint configuration
+JavaScript (ES6+)
 
-If you are developing a production application, we recommend using TypeScript with type-aware lint rules enabled. Check out the [TS template](https://github.com/vitejs/vite/tree/main/packages/create-vite/template-react-ts) for information on how to integrate TypeScript and [`typescript-eslint`](https://typescript-eslint.io) in your project.
+Stripe Checkout (Test Mode)
+
+Netlify (Deployment)
+
+🚀 Features Implemented
+🔍 Flight Search
+
+Search flights by:
+
+Origin
+
+Destination
+
+Travel date
+
+Compare flights across airlines
+
+Display:
+
+Price
+
+Duration
+
+Stops
+
+Airline code
+
+🛫 Flight Listing & Filters
+
+Sort by:
+
+Cheapest
+
+Fastest
+
+Best value
+
+Filter by:
+
+Airlines
+
+Stops
+
+Price range
+
+Visual airline badges (fallback for logos)
+
+🧾 Booking Flow
+
+Select flight and proceed to booking
+
+Passenger details capture
+
+Seat selection (basic)
+
+Add-ons and coupons (where applicable)
+
+💳 Payment Integration
+
+Stripe Checkout (Sandbox/Test Mode)
+
+Secure redirection to Stripe
+
+Success & cancellation redirects handled correctly
+
+📄 Booking Details Page
+
+Displays:
+
+Booking reference
+
+Passenger info
+
+Seats
+
+Fare breakdown (base, taxes, discounts, addons)
+
+Booking confirmation shown post-payment
+
+👨‍💼 Admin Pages
+
+Admin login page
+
+Admin booking management
+
+Resend payment link functionality
+
+⚠️ Current Fallbacks & Limitations (Frontend)
+
+Airline logos use fallback UI badges instead of universal live logos
+
+Airport dataset is curated, not global (major airports only)
+
+Seat maps are static/basic, not dynamically generated per aircraft
+
+Real-time flight status updates are not live yet
+
+No SMS notifications (email only)
+
+🔮 Planned Improvements (Frontend)
+
+Global airport dataset with autocomplete
+
+Dynamic seat maps per aircraft type
+
+Better mobile responsiveness polish
+
+Admin dashboard analytics
+
+Multi-currency display
+
+Improved booking PDF preview UI
+
+📦 Deployment Notes
+
+Hosted on Netlify
+
+Uses SPA routing via _redirects
+
+All routes are handled client-side
+
+🧪 Payments Note
+
+⚠️ Stripe is currently running in TEST (sandbox) mode.
+No real money is charged. Live mode is planned post-audit.
