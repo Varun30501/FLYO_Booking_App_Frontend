@@ -137,3 +137,9 @@ All routes are handled client-side
 
 ⚠️ Stripe is currently running in TEST (sandbox) mode.
 No real money is charged. Live mode is planned post-audit.
+
+Admin Login to access admin pages:
+Login Id: admin@example.com  
+Password: Admin123
+
+Note*: Using gmail will work to get booking information and notifications. Make sure to check spam folder to view them if its not showing in your inbox
