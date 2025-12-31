@@ -141,5 +141,6 @@ No real money is charged. Live mode is planned post-audit.
 Admin Login to access admin pages:
 Login Id: admin@example.com  
 Password: Admin123
+**To access admin login and admin functionalities navigate to /admin which will navigate to the admin login screen**
 
-Note*: Using gmail will work to get booking information and notifications. Make sure to check spam folder to view them if its not showing in your inbox
+**Note*: Using gmail will work to get booking information and notifications. Make sure to check spam folder to view them if its not showing in your inbox**
