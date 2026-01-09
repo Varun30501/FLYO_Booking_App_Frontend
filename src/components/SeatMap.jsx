@@ -66,18 +66,11 @@ export default function SeatMap({
   }
 
   function buildCandidates() {
-    const candidates = [];
-    if (flightId) candidates.push(String(flightId));
-    if (airline) candidates.push(String(airline));
-    try {
-      const code =
-        flightObj?.itineraries?.[0]?.segments?.[0]?.carrierCode ||
-        (Array.isArray(flightObj?.validatingAirlineCodes) ? flightObj.validatingAirlineCodes[0] : null) ||
-        flightObj?.carrierCode || null;
-      if (code) candidates.push(String(code));
-    } catch (e) { /* ignore */ }
-    return Array.from(new Set(candidates.filter(Boolean)));
+    // STRICT: only allow flightId
+    if (!flightId) return [];
+    return [String(flightId)];
   }
+
 
   async function tryFetchKey(key) {
     const url = `${API_BASE}/seats/${encodeURIComponent(key)}`;
@@ -114,7 +107,9 @@ export default function SeatMap({
       }
     }
     if (mountedRef.current) {
-      setStatusMsg('Seat map not found');
+      setStatusMsg(
+        `Seat map not found for flight ${flightId}. Please contact support.`
+      );
       setMap(null);
       setLoading(false);
     }
@@ -295,7 +290,7 @@ export default function SeatMap({
       // resolve base price and modifiers
       const base = resolveBasePrice();
       const modifier = (typeof s.priceModifier === 'number' ? Number(s.priceModifier)
-                        : (typeof s.classPrice === 'number' ? Number(s.classPrice) : null));
+        : (typeof s.classPrice === 'number' ? Number(s.classPrice) : null));
       if (base !== null) {
         displayNumericPrice = base + (modifier || 0);
       } else if (modifier !== null) {
