@@ -213,7 +213,8 @@ export default function BookingPage() {
         <div className="mb-8">
           <SeatMap
             key={`seatmap-${seatMapRefreshKey}`}
-            flightId={id}   // <-- ALWAYS route param
+            flightId={id}   // ALWAYS route param
+            travelDate={searchParams?.date}   // ✅ ADD THIS LINE
             airline={
               flight?.itineraries?.[0]?.segments?.[0]?.carrierCode
               || flight?.airline
@@ -221,6 +222,7 @@ export default function BookingPage() {
             }
             onSelectionChange={(s) => setSelectedSeats(s)}
           />
+
 
         </div>
 

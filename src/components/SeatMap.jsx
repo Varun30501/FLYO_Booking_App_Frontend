@@ -15,6 +15,7 @@ import React, { useEffect, useState, useRef } from 'react';
 
 export default function SeatMap({
   flightId,
+  travelDate,
   airline,
   flightObj,
   refreshKey,
@@ -73,7 +74,7 @@ export default function SeatMap({
 
 
   async function tryFetchKey(key) {
-    const url = `${API_BASE}/seats/${encodeURIComponent(key)}`;
+    const url = `${API_BASE}/seats/${encodeURIComponent(key)}?date=${encodeURIComponent(travelDate)}`;
     try {
       const res = await fetch(url);
       if (res.ok) {
