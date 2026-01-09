@@ -101,10 +101,12 @@ export default function FlightSearchForm({ onSearch, prefill = null }) {
         <Field label="Departure">
           <input
             type="date"
+            min={dayjs().format("YYYY-MM-DD")}
             value={date}
             onChange={(e) => setDate(e.target.value)}
             className="w-full p-3 rounded bg-white/10 text-white border border-white/20 focus:ring-2 focus:ring-orange-400"
           />
+
         </Field>
 
         {/* SEARCH */}
