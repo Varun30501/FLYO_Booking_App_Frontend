@@ -153,7 +153,7 @@ export default function BookingDetails() {
   async function downloadPDF() {
     try {
       const res = await fetch(
-        `${import.meta.env.VITE_API_BASE_URL || "http://localhost:4000"}/api/bookings/${booking.bookingRef}/itinerary.pdf`,
+        `${import.meta.env.VITE_API_URL || "http://localhost:4000"}/api/bookings/${booking.bookingRef}/itinerary.pdf`,
         {
           method: "GET",
           credentials: "include",
