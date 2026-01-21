@@ -197,7 +197,7 @@ export default function BookingCancelled({ open = false, onClose = () => { }, bo
             onClick={async () => {
               try {
                 const res = await fetch(
-                  `${import.meta.env.VITE_API_URL || "http://localhost:4000"}/api/bookings/${bookingRef}/refund.pdf`,
+                  `${import.meta.env.VITE_API_URL || "http://localhost:4000/api"}/bookings/${bookingRef}/refund.pdf`,
                   { credentials: "include" }
                 );
                 if (!res.ok) throw new Error("Failed to download refund receipt");
