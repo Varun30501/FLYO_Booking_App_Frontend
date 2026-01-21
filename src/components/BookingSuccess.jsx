@@ -41,11 +41,17 @@ export default function BookingSuccess({ bookingRef, onViewBooking, onClose, mod
   };
 
   const handleView = () => {
-    setShow(false);
+    // close immediately so overlay is removed
+    if (typeof onClose === "function") {
+      onClose();
+    }
+
+    // navigate after close
     setTimeout(() => {
       if (typeof onViewBooking === "function") onViewBooking();
-    }, 220);
+    }, 0);
   };
+
 
   const content = (
     <div
@@ -82,7 +88,7 @@ export default function BookingSuccess({ bookingRef, onViewBooking, onClose, mod
 
                   <g className="plane" transform="translate(0,0)">
                     <path d="M4 32 L22 28 L30 36 L44 24 L56 22 L60 26 L44 30 L30 42 L22 36 Z"
-                          fill="url(#g1)" opacity="0.98"></path>
+                      fill="url(#g1)" opacity="0.98"></path>
                   </g>
 
                   <g className="contrail" fill="#9fb8ff">

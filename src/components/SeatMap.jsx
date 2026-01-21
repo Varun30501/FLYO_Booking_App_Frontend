@@ -13,15 +13,20 @@ import React, { useEffect, useState, useRef } from 'react';
  *  - tooltip no longer shows "free" / "available" / held-by / hold-until
  */
 
+
 export default function SeatMap({
   flightId,
   travelDate,
+  origin,
+  destination,
   airline,
   flightObj,
   refreshKey,
   onSelectionChange,
+  selectedSeats = [],
   canSelect = true,
-  maxSelectable = Infinity
+  maxSelectable = Infinity,
+  hasRestrictedPassengers
 }) {
   const [map, setMap] = useState(null);
   const [loading, setLoading] = useState(true);
@@ -32,9 +37,94 @@ export default function SeatMap({
   const API_BASE = import.meta.env.VITE_API_URL ?? '/api';
   const mountedRef = useRef(true);
   const containerRef = useRef(null); // for tooltip positioning relative to container
+  const [showExtraLegroomOnly, setShowExtraLegroomOnly] = useState(false);
+  const [zoom, setZoom] = React.useState(1);
+
+  const isMobile = useIsMobile();
+
+  const economyStartRow = 11;
+
+  const onWheelZoom = (e) => {
+    if (!e.ctrlKey && !isMobile) return;
+    e.preventDefault();
+    setZoom(z => Math.min(1.8, Math.max(0.8, z - e.deltaY * 0.001)));
+  };
+
+  const onTouchStartRef = React.useRef(null);
+
+  const onTouchStart = (e) => {
+    if (e.touches.length === 2) {
+      const dx = e.touches[0].clientX - e.touches[1].clientX;
+      const dy = e.touches[0].clientY - e.touches[1].clientY;
+      onTouchStartRef.current = Math.hypot(dx, dy);
+    }
+  };
+
+  const onTouchMove = (e) => {
+    if (e.touches.length === 2 && onTouchStartRef.current) {
+      const dx = e.touches[0].clientX - e.touches[1].clientX;
+      const dy = e.touches[0].clientY - e.touches[1].clientY;
+      const dist = Math.hypot(dx, dy);
+      setZoom(z => Math.min(1.8, Math.max(0.8, z * (dist / onTouchStartRef.current))));
+      onTouchStartRef.current = dist;
+    }
+  };
+
+  const [restrictionModal, setRestrictionModal] = React.useState({
+    open: false,
+    message: ''
+  });
 
   useEffect(() => { mountedRef.current = true; return () => { mountedRef.current = false; }; }, []);
-  useEffect(() => { if (onSelectionChange) onSelectionChange(selected); }, [selected]);
+
+  // IMPORTANT:
+  // SeatMap emits ENRICHED seat objects (seatId, seatClass, priceModifier, price)
+  // BookingForm relies on seatMap fetch for pricing, not on raw selection objects.
+  // Do NOT change this contract without updating BookingForm.
+
+  useEffect(() => {
+    if (!onSelectionChange || !map) return;
+
+    const base = resolveBasePrice();
+
+    const enriched = selected.map(seatId => {
+      const s = (map.seats || []).find(
+        x => x && (x.seatId === seatId || x.label === seatId)
+      );
+      if (!s) return null;
+
+      const modifier =
+        typeof s.priceModifier === 'number'
+          ? Number(s.priceModifier)
+          : typeof s.classPrice === 'number'
+            ? Number(s.classPrice)
+            : 0;
+
+      const price =
+        typeof s.price === 'number'
+          ? Number(s.price)
+          : base !== null
+            ? Number(base) + modifier
+            : modifier;
+
+      return {
+        seatId: s.seatId,
+        label: s.seatId,
+        seatClass: s.seatClass || null,
+        priceModifier: modifier,
+        price: Math.round(price)
+      };
+    }).filter(Boolean);
+
+    onSelectionChange(enriched);
+  }, [selected, map]);
+
+  const AIRCRAFT_RULES = {
+    DEFAULT: { economyStartRow: 11 },
+    A320: { economyStartRow: 11 },
+    B737: { economyStartRow: 12 } // example
+  };
+
 
   function normalizeSeatClass(name = "") {
     if (!name) return null;
@@ -47,6 +137,149 @@ export default function SeatMap({
     const words = String(name).split(/[\s_-]+/).map(w => w.charAt(0).toUpperCase() + w.slice(1));
     const joined = words.join(' ');
     return joined.includes('Class') ? joined : `${joined} Class`;
+  }
+
+  function shouldRenderCabinHeaderByChange(rowNum, map) {
+    if (!map?.seats) return false;
+
+    const getRowClass = (row) => {
+      const seat = map.seats.find(s => Number(s?.row) === row);
+      return seat?.seatClass || null;
+    };
+
+    const currentClass = getRowClass(rowNum);
+    const previousClass = getRowClass(rowNum - 1);
+
+    // render header if:
+    // - first row with a class
+    // - class changes from previous row
+    return !!currentClass && currentClass !== previousClass;
+  }
+
+
+  // Visual identity per seat class (professional airline style)
+  function seatClassColors(seatClass) {
+    const c = String(seatClass || '').toLowerCase().replace(/\s+/g, '');
+
+    switch (c) {
+      case 'first':
+      case 'firstclass':
+        return {
+          back: '#4c1d95',      // deep purple
+          cushion: '#6d28d9'
+        };
+
+      case 'business':
+      case 'businessclass':
+        return {
+          back: '#1e3a8a',      // royal blue
+          cushion: '#2563eb'
+        };
+
+      case 'premiumeconomy':
+      case 'premiumeco':
+      case 'premeco':
+        return {
+          back: '#0f766e',      // teal
+          cushion: '#14b8a6'
+        };
+
+      case 'economy':
+      default:
+        return {
+          back: '#1f2937',      // neutral grey
+          cushion: '#374151'
+        };
+    }
+  }
+
+  function seatClassHeaderColor(seatClass) {
+    const colors = seatClassColors(seatClass);
+    return colors.back;
+  }
+
+  function useIsMobile() {
+    const [isMobile, setIsMobile] = React.useState(
+      typeof window !== 'undefined' && window.innerWidth < 640
+    );
+
+    React.useEffect(() => {
+      const onResize = () => setIsMobile(window.innerWidth < 640);
+      window.addEventListener('resize', onResize);
+      return () => window.removeEventListener('resize', onResize);
+    }, []);
+
+    return isMobile;
+  }
+
+  function LegendItem({ color, label, outline }) {
+    return (
+      <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+        <div style={{
+          width: isMobile ? 12 : 16,
+          height: isMobile ? 12 : 16,
+          borderRadius: 4,
+          background: outline ? 'transparent' : color,
+          border: outline ? `2px solid ${color}` : 'none'
+        }} />
+        <span>{label}</span>
+      </div>
+    );
+  }
+
+  function detectExitRows(seats = []) {
+    if (!Array.isArray(seats) || seats.length === 0) return [];
+
+    // group seats by row
+    const rows = {};
+    seats.forEach(s => {
+      if (!s || !s.row || !s.col) return;
+      const r = Number(s.row);
+      const c = Number(s.col);
+      if (!rows[r]) rows[r] = [];
+      rows[r].push(c);
+    });
+
+    const rowNumbers = Object.keys(rows).map(Number).sort((a, b) => a - b);
+    const exitRows = new Set();
+
+    // helper: detect missing column gaps (door cutout / aisle shift)
+    const hasLargeColumnGap = (cols) => {
+      const sorted = [...cols].sort((a, b) => a - b);
+      for (let i = 1; i < sorted.length; i++) {
+        if (sorted[i] - sorted[i - 1] >= 2) return true;
+      }
+      return false;
+    };
+
+    // 1️⃣ structural column gap detection
+    rowNumbers.forEach(r => {
+      if (hasLargeColumnGap(rows[r])) {
+        exitRows.add(r);
+      }
+    });
+
+    // 2️⃣ vertical row gap detection (door space)
+    for (let i = 0; i < rowNumbers.length - 1; i++) {
+      const curr = rowNumbers[i];
+      const next = rowNumbers[i + 1];
+      if (next - curr >= 2) {
+        exitRows.add(curr);
+      }
+    }
+
+    // 3️⃣ fallback: significantly fewer seats than median
+    const seatCounts = rowNumbers.map(r => rows[r].length);
+    const sortedCounts = [...seatCounts].sort((a, b) => a - b);
+    const median = sortedCounts[Math.floor(sortedCounts.length / 2)] || 0;
+
+    rowNumbers.forEach(r => {
+      if (rows[r].length <= Math.max(1, Math.floor(median * 0.6))) {
+        exitRows.add(r);
+      }
+    });
+
+    return Array.from(exitRows).sort((a, b) => a - b);
   }
 
   function decodeJwtUserId(token) {
@@ -74,21 +307,47 @@ export default function SeatMap({
 
 
   async function tryFetchKey(key) {
-    const url = `${API_BASE}/seats/${encodeURIComponent(key)}?date=${encodeURIComponent(travelDate)}`;
+    const hasDate =
+      travelDate &&
+      typeof travelDate === "string" &&
+      travelDate !== "undefined";
+
+    const hasRoute =
+      origin &&
+      destination &&
+      typeof origin === "string" &&
+      typeof destination === "string";
+
+    if (!hasDate || !hasRoute) {
+      throw new Error('SeatMap requires travelDate, origin and destination');
+    }
+
+    const url =
+      `${API_BASE}/seats/${encodeURIComponent(key)}?date=${encodeURIComponent(travelDate)}&origin=${encodeURIComponent(origin)}&destination=${encodeURIComponent(destination)}`;
+
+
     try {
       const res = await fetch(url);
       if (res.ok) {
         const json = await res.json();
         return { ok: true, json, url };
-      } else {
-        return { ok: false, status: res.status, url };
       }
+      return { ok: false, status: res.status, url };
     } catch (err) {
       return { ok: false, error: err, url };
     }
   }
 
+
+
   async function fetchMap() {
+    if (!travelDate) {
+      setStatusMsg('Travel date missing. Please restart booking.');
+      setMap(null);
+      setLoading(false);
+      return;
+    }
+
     if (!flightId && !airline && !flightObj) {
       setStatusMsg('No flight specified');
       setMap(null);
@@ -123,7 +382,7 @@ export default function SeatMap({
     const t = setInterval(fetchMap, interval);
     return () => clearInterval(t);
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [flightId, airline, JSON.stringify(flightObj)]);
+  }, [flightId, travelDate, airline, JSON.stringify(flightObj)]);
 
   function toggleSelect(seatId) {
     if (!canSelect) return;
@@ -146,13 +405,65 @@ export default function SeatMap({
   const cols = map?.cols || 0;
 
   // seat lookup map for fast access
-  const seatByPos = {};
-  (map?.seats || []).forEach(s => {
-    if (!s) return;
-    const r = Number(s.row) || 0;
-    const c = Number(s.col) || 0;
-    seatByPos[`${r}-${c}`] = s;
-  });
+  const exitRows = detectExitRows(map?.seats || []);
+
+  const seatByPos = React.useMemo(() => {
+    const result = {};
+
+    (map?.seats || []).forEach(s => {
+      if (!s) return;
+
+      const rowNum = Number(s.row);
+
+      const isExtraLegroomRow =
+        rowNum === economyStartRow && s.seatClass === 'Economy';
+
+      const isRestricted =
+        isExtraLegroomRow && hasRestrictedPassengers;
+
+      const seat = {
+        ...s,
+        isExitRow: isExtraLegroomRow,
+        isRestricted,
+        features: {
+          ...s.features,
+          extraLegroom: s.features?.extraLegroom || isExtraLegroomRow
+        }
+      };
+
+      if (showExtraLegroomOnly && !seat.features.extraLegroom) {
+        return;
+      }
+
+      const r = rowNum || 0;
+      const c = Number(seat.col) || 0;
+      result[`${r}-${c}`] = seat;
+    });
+
+    return result;
+  }, [
+    map?.seats,
+    showExtraLegroomOnly,
+    hasRestrictedPassengers,
+    economyStartRow
+  ]);
+
+  React.useEffect(() => {
+    if (!hasRestrictedPassengers) return;
+
+    const invalidSelected = selectedSeats.filter(seatId => {
+      const seat = Object.values(seatByPos).find(
+        s => s.seatId === seatId
+      );
+      return seat?.isRestricted;
+    });
+
+    if (invalidSelected.length > 0) {
+      onChange(
+        selectedSeats.filter(id => !invalidSelected.includes(id))
+      );
+    }
+  }, [hasRestrictedPassengers, seatByPos]);
 
   // aisle heuristic: insert gap after middle column if cols > 6
   const aisleAfter = cols > 6 ? Math.floor(cols / 2) : null;
@@ -200,6 +511,7 @@ export default function SeatMap({
     } catch (e) { /* ignore */ }
     return null;
   }
+
 
   // Seat component
   function Seat({ s }) {
@@ -258,8 +570,11 @@ export default function SeatMap({
     };
 
     // color logic
-    let backColor = '#0f1724';
-    let cushionColor = '#1f2937';
+    // color logic (class-based)
+    const classColors = seatClassColors(s.seatClass);
+
+    let backColor = classColors.back;
+    let cushionColor = classColors.cushion;
     let cushionTextColor = '#fff';
 
     if (isBooked) {
@@ -276,35 +591,38 @@ export default function SeatMap({
       backColor = '#0ea5a4'; cushionColor = '#06b6d4'; cushionTextColor = '#000';
     }
 
+    if (s.features?.extraLegroom) {
+      cushionStyle.border = '2px solid #22c55e';
+      cushionStyle.boxShadow = '0 0 0 2px rgba(34,197,94,0.35)';
+    }
+
     const cushionFinalStyle = {
       ...cushionStyle,
       background: cushionColor,
-      color: cushionTextColor
+      color: cushionTextColor,
+      border: s.features?.extraLegroom ? '2px solid #22c55e' : undefined,
+      boxShadow: s.features?.extraLegroom
+        ? '0 0 0 2px rgba(34,197,94,0.35)'
+        : cushionStyle.boxShadow
     };
 
     // ---------- PRICE LOGIC ----------
     // If seat provides absolute numeric price, use it.
-    let displayNumericPrice = null;
-    if (s && typeof s.price === 'number') {
-      displayNumericPrice = Number(s.price);
-    } else {
-      // resolve base price and modifiers
-      const base = resolveBasePrice();
-      const modifier = (typeof s.priceModifier === 'number' ? Number(s.priceModifier)
-        : (typeof s.classPrice === 'number' ? Number(s.classPrice) : null));
-      if (base !== null) {
-        displayNumericPrice = base + (modifier || 0);
-      } else if (modifier !== null) {
-        // no base available, but modifier exists -> show modifier (best effort)
-        displayNumericPrice = modifier;
-      } else {
-        // fallback: seat may include a string price we can parse
-        if (s && typeof s.price === 'string') {
-          const n = Number(String(s.price).replace(/[^\d.-]/g, '')) || null;
-          if (n !== null && !Number.isNaN(n)) displayNumericPrice = n;
-        }
-      }
-    }
+    // ---------- PRICE LOGIC ----------
+    const displayNumericPrice =
+      typeof s.price === 'number'
+        ? Number(s.price)
+        : (() => {
+          const base = resolveBasePrice();
+          const modifier =
+            typeof s.priceModifier === 'number'
+              ? Number(s.priceModifier)
+              : typeof s.classPrice === 'number'
+                ? Number(s.classPrice)
+                : 0;
+          return base !== null ? base + modifier : null;
+        })();
+
 
     // price string to display (rupee formatted)
     const priceBadge = (displayNumericPrice !== null && displayNumericPrice !== undefined && !Number.isNaN(displayNumericPrice))
@@ -332,7 +650,8 @@ export default function SeatMap({
         seat: s.seatId,
         status: s.status,
         seatClass: seatClassLabel,
-        price: priceBadge
+        price: priceBadge,
+        extraLegroom: !!s.features?.extraLegroom
       });
     };
     const handleLeave = () => {
@@ -342,7 +661,18 @@ export default function SeatMap({
 
     return (
       <div
-        onClick={() => toggleSelect(s.seatId)}
+        onClick={() => {
+          if (s.isRestricted) {
+            setRestrictionModal({
+              open: true,
+              message:
+                'Exit-row (extra-legroom) seats cannot be selected for child or assisted passengers.'
+            });
+            return;
+          }
+          toggleSelect(s.seatId);
+        }}
+
         onMouseEnter={handleEnter}
         onMouseLeave={handleLeave}
         style={containerStyle}
@@ -375,6 +705,34 @@ export default function SeatMap({
             {seatClassLabel[0]}
           </div>
         )}
+
+        {s.features?.extraLegroom && (
+          <div style={{
+            position: 'absolute',
+            right: 6,
+            top: 6,
+            fontSize: 10,
+            padding: '2px 6px',
+            borderRadius: 6,
+            background: '#22c55e',
+            color: '#022c22',
+            fontWeight: 700
+          }}>
+            EL
+          </div>
+        )}
+
+        {s.features?.extraLegroom && s.isExitRow && (
+          <div style={{
+            position: 'absolute',
+            right: 6,
+            bottom: 6,
+            fontSize: 12
+          }}>
+            🚪
+          </div>
+        )}
+
       </div>
     );
   }
@@ -416,28 +774,89 @@ export default function SeatMap({
         {map?.origin ? ` • ${map.origin} → ${map.destination || ''}` : ''}
       </div>
 
-      <div style={{ background: 'rgba(8,16,30,0.78)', padding: 18, borderRadius: 14 }}>
-        <div style={{ display: 'flex', justifyContent: 'center', padding: '6px 0' }}>
+      <label style={{
+        display: 'flex',
+        flexDirection: isMobile ? 'column' : 'row',
+        alignItems: isMobile ? 'flex-start' : 'center',
+        gap: isMobile ? 4 : 8,
+        fontSize: 13,
+        marginBottom: isMobile ? 14 : 10,
+        color: '#cbd5e1'
+      }}>
+        <input
+          type="checkbox"
+          checked={showExtraLegroomOnly}
+          onChange={(e) => setShowExtraLegroomOnly(e.target.checked)}
+        />
+        Show extra legroom seats only
+      </label>
+
+      <div
+        onWheel={onWheelZoom}
+        onTouchStart={onTouchStart}
+        onTouchMove={onTouchMove}
+        style={{
+          background: 'rgba(8,16,30,0.78)',
+          padding: 18,
+          borderRadius: 14,
+          overflow: 'hidden',
+          touchAction: 'none'
+        }}
+      >
+        <div style={{
+          display: 'flex', justifyContent: 'center', padding: '6px 0', transform: `scale(${zoom})`,
+          transformOrigin: 'top center',
+          transition: 'transform 0.15s ease'
+        }}>
           <div>
             {Array.from({ length: rows }).map((_, rIndex) => {
               const rowNum = rIndex + 1;
+
+              // determine cabin for this row
+              const rowSeats = (map?.seats || []).filter(s => Number(s?.row) === rowNum);
+              const rowClass = rowSeats[0]?.seatClass || null;
               return (
-                <div key={rIndex} style={{ display: 'flex', justifyContent: 'center', alignItems: 'center', marginBottom: 6 }}>
-                  <div style={{ display: 'flex', alignItems: 'center', padding: '4px 2px' }}>
-                    {Array.from({ length: cols }).map((_, cIndex) => {
-                      const colNum = cIndex + 1;
-                      // aisle insertion
-                      if (aisleAfter && cIndex === aisleAfter) {
-                        return <div key={`${rIndex}-${cIndex}-aisle`} style={{ width: SEAT_BOX_WIDTH / 2 }} />;
-                      }
-                      const seat = seatByPos[`${rowNum}-${colNum}`] || null;
-                      return <div key={`${rIndex}-${cIndex}`}><Seat s={seat} /></div>;
-                    })}
+                <React.Fragment key={rIndex}>
+                  {shouldRenderCabinHeaderByChange(rowNum, map) && (
+                    <div style={{
+                      margin: isMobile ? '10px 0 6px' : '18px 0 10px',
+                      textAlign: 'center'
+                    }}>
+                      <div style={{
+                        fontSize: isMobile ? 12 : 14,
+                        fontWeight: 700,
+                        letterSpacing: 0.5,
+                        color: seatClassHeaderColor(rowClass)
+                      }}>
+                        {normalizeSeatClass(rowClass)}
+                      </div>
+
+                      {/* subtle divider */}
+                      <div style={{
+                        height: 1,
+                        margin: '6px auto 0',
+                        width: isMobile ? '40%' : '60%',
+                        background: 'linear-gradient(to right, transparent, rgba(255,255,255,0.25), transparent)'
+                      }} />
+                    </div>
+                  )}
+                  <div key={rIndex} style={{ display: 'flex', justifyContent: 'center', alignItems: 'center', marginBottom: 6 }}>
+                    <div style={{ display: 'flex', alignItems: 'center', padding: '4px 2px' }}>
+                      {Array.from({ length: cols }).map((_, cIndex) => {
+                        const colNum = cIndex + 1;
+                        // aisle insertion
+                        if (aisleAfter && cIndex === aisleAfter) {
+                          return <div key={`${rIndex}-${cIndex}-aisle`} style={{ width: SEAT_BOX_WIDTH / 2 }} />;
+                        }
+                        const seat = seatByPos[`${rowNum}-${colNum}`] || null;
+                        return <div key={`${rIndex}-${cIndex}`}><Seat s={seat} /></div>;
+                      })}
+                    </div>
                   </div>
-                </div>
-              );
+                </React.Fragment>);
             })}
           </div>
+
         </div>
 
         {/* tooltip (positioned relative to containerRef) */}
@@ -459,6 +878,11 @@ export default function SeatMap({
           }}>
             <div style={{ fontWeight: 800, marginBottom: 4 }}>{tooltip.seat}</div>
             {tooltip.seatClass && <div style={{ fontSize: 12, color: '#cbd5e1' }}>{tooltip.seatClass}</div>}
+            {tooltip.extraLegroom && (
+              <div style={{ fontSize: 11, color: '#22c55e', marginTop: 4 }}>
+                Extra legroom
+              </div>
+            )}
             {tooltip.price && <div style={{ marginTop: 6, fontWeight: 700 }}>{tooltip.price}</div>}
 
             {/* show status only if meaningful (not "free"/"available") */}
@@ -476,12 +900,82 @@ export default function SeatMap({
             <span style={{ marginLeft: 6, padding: '4px 8px', borderRadius: 6, background: '#f59e0b', color: '#000', marginRight: 6 }}>Held</span>
             <span style={{ marginLeft: 6, padding: '4px 8px', borderRadius: 6, background: '#b91c1c', color: '#fff', marginRight: 6 }}>Booked</span>
           </div>
-
+          {/* LEGEND */}
+          <div style={{
+            display: 'grid',
+            gridTemplateColumns: isMobile ? 'repeat(2, minmax(0,1fr))' : 'auto auto auto auto auto',
+            gap: isMobile ? 8 : 12,
+            marginTop: isMobile ? 12 : 18,
+            fontSize: isMobile ? 11 : 12,
+            color: '#cbd5e1'
+          }}>
+            <LegendItem color="#6d28d9" label="First Class" />
+            <LegendItem color="#2563eb" label="Business Class" />
+            <LegendItem color="#14b8a6" label="Premium Economy" />
+            <LegendItem color="#374151" label="Economy" />
+            <LegendItem color="#22c55e" label="Extra legroom" outline />
+          </div>
           <div style={{ fontSize: 13 }}>
-            Selected: <span style={{ color: '#fff', fontWeight: 700 }}>{selected.join(', ') || 'None'}</span>
+            Selected:{' '}
+            <span style={{ color: '#fff', fontWeight: 700 }}>
+              {(selected || []).map(s => (typeof s === 'string' ? s : s.seatId)).join(', ') || 'None'}
+            </span>
           </div>
         </div>
       </div>
+      {restrictionModal.open && (
+        <div
+          style={{
+            position: 'fixed',
+            inset: 0,
+            background: 'rgba(0,0,0,0.6)',
+            zIndex: 1000,
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'center'
+          }}
+        >
+          <div
+            style={{
+              background: '#0f172a',
+              padding: 24,
+              borderRadius: 12,
+              width: '90%',
+              maxWidth: 420,
+              color: '#e5e7eb',
+              boxShadow: '0 10px 40px rgba(0,0,0,0.4)'
+            }}
+          >
+            <div style={{ fontSize: 16, fontWeight: 600, marginBottom: 12 }}>
+              Seat not available
+            </div>
+
+            <div style={{ fontSize: 14, lineHeight: 1.5 }}>
+              {restrictionModal.message}
+            </div>
+
+            <div style={{ marginTop: 20, textAlign: 'right' }}>
+              <button
+                onClick={() =>
+                  setRestrictionModal({ open: false, message: '' })
+                }
+                style={{
+                  padding: '8px 14px',
+                  background: '#22c55e',
+                  border: 'none',
+                  borderRadius: 8,
+                  color: '#052e16',
+                  fontWeight: 600,
+                  cursor: 'pointer'
+                }}
+              >
+                OK
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
     </div>
   );
 }

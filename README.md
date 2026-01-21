@@ -99,31 +99,93 @@ Admin booking management
 
 Resend payment link functionality
 
-⚠️ Current Fallbacks & Limitations (Frontend)
 
-Airline logos use fallback UI badges instead of universal live logos
+🪑 Seat Map v3 (Production-grade)
 
-Airport dataset is curated, not global (major airports only)
+The Seat Map system has been significantly upgraded to support real-world booking scenarios and eliminate earlier inconsistencies.
 
-Seat maps are static/basic, not dynamically generated per aircraft
+✅ What’s new in SeatMap v3
 
-Real-time flight status updates are not live yet
+Template-based Seat Maps
 
-No SMS notifications (email only)
+Each flight has a single template seat map identified only by flightId
 
-🔮 Planned Improvements (Frontend)
+Templates are immutable and never tied to date or route
 
-Global airport dataset with autocomplete
+Dynamic Seat Map Instantiation
 
-Dynamic seat maps per aircraft type
+On flight search, a new seat map is dynamically created using:
 
-Better mobile responsiveness polish
+flightId + travelDate + origin + destination
 
-Admin dashboard analytics
 
-Multi-currency display
+This ensures seat availability is isolated per journey, not reused incorrectly
 
-Improved booking PDF preview UI
+Seat Lifecycle Management
+
+free → held → booked
+
+Seats are:
+
+held during booking flow
+
+booked only after successful payment
+
+released automatically if booking expires
+
+Passenger-aware Seat Rules
+
+Exit-row and restricted seats are blocked for:
+
+Child passengers
+
+Passengers requiring assistance
+
+Seat availability now reflects passenger eligibility correctly
+
+Backend-authoritative Seat State
+
+Seat status is always sourced from backend seat maps
+
+Frontend never “guesses” or overrides seat availability
+
+🧾 Booking & Payment Sync (SeatMap v3)
+
+Seat finalization happens only via payment webhook
+
+Booking status and seat status are now fully consistent
+
+Prevents:
+
+Double booking
+
+Phantom “held” seats
+
+Mismatched UI vs DB state
+
+⚠️ Current Limitations (SeatMap v3)
+
+These are known and acceptable for production launch:
+
+Seat layouts are generic per flight, not aircraft-specific yet
+
+No real-time seat sync across multiple users (near-real-time via DB only)
+
+Seat maps are not visually customized per airline branding
+
+No seat-level pricing by cabin class (Economy/Business split pending)
+
+🔮 Planned Improvements (SeatMap)
+
+Aircraft-specific seat layouts (A320, B737, etc.)
+
+Real-time seat locking via Redis / WebSockets
+
+Seat class differentiation (Economy / Premium / Business)
+
+Better mobile seat-map interactions
+
+Accessibility improvements for seat selection UX
 
 📦 Deployment Notes
 

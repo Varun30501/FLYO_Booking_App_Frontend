@@ -1,6 +1,6 @@
 // src/pages/BookingPage.jsx
 import React, { useEffect, useState } from "react";
-import { useParams, useNavigate } from "react-router-dom";
+import { useParams, useNavigate, useSearchParams } from "react-router-dom";
 import { get, post } from "../services/api";
 import SeatMap from "../components/SeatMap";
 
@@ -17,9 +17,43 @@ export default function BookingPage() {
   const [seatMapRefreshKey, setSeatMapRefreshKey] = useState(0);
   const [contact, setContact] = useState({ name: "", email: "", phone: "" });
 
+  const hasChildPassenger = passengers.some(p => p.passengerType === 'child');
+  const hasDisabledPassenger = passengers.some(p => p.specialAssistance?.disabled);
+  const [searchParams] = useSearchParams();
+  const travelDate =
+    searchParams.get("date") ||
+    flight?.travelDate ||
+    flight?.departureDate ||
+    null;
+
+
+
   const [passengers, setPassengers] = useState([
-    { firstName: "", lastName: "", passengerType: "adult" },
+    {
+      firstName: "",
+      lastName: "",
+      passengerType: "adult", // adult | child | infant
+      specialAssistance: {
+        disabled: false
+      }
+    }
   ]);
+
+  const hasRestrictedPassengers =
+    passengerCriteria.children > 0 || passengerCriteria.assistance;
+
+  const [passengerCriteria, setPassengerCriteria] = useState({
+    adults: 1,
+    children: 0,
+    assistance: false
+  });
+
+  useEffect(() => {
+    console.log('[BookingPage] passengers:', passengers);
+    console.log('[BookingPage] restricted:',
+      hasChildPassenger || hasDisabledPassenger
+    );
+  }, [passengers]);
 
   useEffect(() => {
     let mounted = true;
@@ -80,6 +114,21 @@ export default function BookingPage() {
     e.preventDefault();
 
     if (!flight) return setError("No flight selected");
+    const resolvedOrigin =
+      flight?.origin ||
+      flight?.itineraries?.[0]?.segments?.[0]?.departure?.iataCode ||
+      null;
+
+    const resolvedDestination =
+      flight?.destination ||
+      flight?.itineraries?.[0]?.segments?.[0]?.arrival?.iataCode ||
+      null;
+
+    console.log('[BookingPage] createBooking payload route', {
+      resolvedOrigin,
+      resolvedDestination,
+    });
+
     if (selectedSeats.length === 0)
       return setError("Select at least one seat before booking");
     if (!contact.name || !contact.email)
@@ -89,14 +138,29 @@ export default function BookingPage() {
     setError(null);
 
     try {
+      const seatTotal = selectedSeats.reduce(
+        (sum, s) => sum + Number(typeof s === "object" ? s.price : 0),
+        0
+      );
+
+      // 🔒 BookingPage is legacy — backend will compute canonical price
+      const price = {
+        amount: seatTotal,
+        currency: flight.price.currency || "INR"
+      };
+
+
       // 1) Create booking (do NOT request createSession here)
       const body = {
         flightId: flight._id || flight.id || id,
+        travelDate,
+        origin: resolvedOrigin,
+        destination: resolvedDestination,
         passengers,
         contact,
         // keep seats as array of seat labels (backend expects array)
         seats: (selectedSeats || []).map((s) => (typeof s === "string" ? s : s?.label || s)),
-        price: flight.price || { amount: 0, currency: "INR" },
+        price
       };
 
       const createResp = await post("/bookings", body);
@@ -212,17 +276,25 @@ export default function BookingPage() {
         {/* SEAT MAP */}
         <div className="mb-8">
           <SeatMap
-            key={`seatmap-${seatMapRefreshKey}`}
-            flightId={id}   // ALWAYS route param
-            travelDate={searchParams?.date}   // ✅ ADD THIS LINE
+            flightId={
+              flight?.flightId ||
+              flight?.id ||
+              flight?.aliases?.[0] ||
+              flight?.providerFlightId ||
+              flight?.code ||
+              flight?.itineraries?.[0]?.segments?.[0]?.flightNumber
+            }
+            travelDate={travelDate}
+            origin={resolvedOrigin}
+            destination={resolvedDestination}
             airline={
               flight?.itineraries?.[0]?.segments?.[0]?.carrierCode
               || flight?.airline
               || null
             }
             onSelectionChange={(s) => setSelectedSeats(s)}
+            hasRestrictedPassengers={hasRestrictedPassengers}
           />
-
 
         </div>
 
@@ -284,6 +356,19 @@ export default function BookingPage() {
                     updatePassenger(idx, "passengerType", e.target.value)
                   }
                 >
+                  <label className="flex items-center gap-2 text-sm text-slate-300 mt-1">
+                    <input
+                      type="checkbox"
+                      checked={p.specialAssistance?.disabled || false}
+                      onChange={(e) =>
+                        updatePassenger(idx, "specialAssistance", {
+                          disabled: e.target.checked
+                        })
+                      }
+                    />
+                    Requires assistance
+                  </label>
+
                   <option value="adult">Adult</option>
                   <option value="child">Child</option>
                   <option value="infant">Infant</option>

@@ -70,7 +70,7 @@ export default function BookingDetails() {
 
   const query = new URLSearchParams(location.search);
   const paidQuery = ["1", "true", "yes"].includes(
-    String(query.get("paid")).toLowerCase()
+    String(query.get("paid") || query.get("payment")).toLowerCase()
   );
 
   const [showSuccess, setShowSuccess] = useState(false);
@@ -153,10 +153,13 @@ export default function BookingDetails() {
   async function downloadPDF() {
     try {
       const res = await fetch(
-        `${import.meta.env.VITE_API_BASE_URL}/api/bookings/${booking.bookingRef}/itinerary.pdf`,
+        `${import.meta.env.VITE_API_BASE_URL || "http://localhost:4000"}/api/bookings/${booking.bookingRef}/itinerary.pdf`,
         {
           method: "GET",
           credentials: "include",
+          headers: {
+            Accept: "application/pdf"
+          }
         }
       );
 
@@ -164,7 +167,10 @@ export default function BookingDetails() {
         throw new Error("Failed to download PDF");
       }
 
-      const blob = await res.blob();
+      // 🔒 FORCE binary read
+      const arrayBuffer = await res.arrayBuffer();
+      const blob = new Blob([arrayBuffer], { type: "application/pdf" });
+
       const url = window.URL.createObjectURL(blob);
 
       const a = document.createElement("a");
@@ -180,6 +186,7 @@ export default function BookingDetails() {
       alert("Unable to download ticket. Please try again.");
     }
   }
+
 
   /* ------------ Ticket Number Submit ---------------- */
   async function submitTicketNumbers({ ticketNumbers = [] }) {
@@ -225,59 +232,49 @@ export default function BookingDetails() {
   const paymentStatus = (booking.paymentStatus || "PENDING").toUpperCase();
 
   /* ---- Flight data (from Flight model) ---- */
-  /* ---------------- FLIGHT INFO (FROM BOOKING) ---------------- */
+  /* ---------------- FLIGHT INFO ---------------- */
 
-  // Default values
-  let flightName = "—";
-  let origin = "—";
-  let destination = "—";
-  let departureAt = null;
-  let arrivalAt = null;
-  let duration = "—";
-
-  /**
-   * For Amadeus / provider bookings,
-   * flight details are embedded at booking time
-   * inside seatsMeta
-   */
-  const seg =
-    booking?.seatsMeta?.[0]?.segment ||
-    booking?.seatsMeta?.[0];
-
-  if (seg) {
-    flightName =
-      seg.carrierCode && seg.flightNumber
-        ? `${seg.carrierCode} ${seg.flightNumber}`
-        : "—";
-
-    origin = seg.origin || seg.from || "—";
-    destination = seg.destination || seg.to || "—";
-
-    departureAt = seg.departureAt
-      ? new Date(seg.departureAt)
-      : null;
-
-    arrivalAt = seg.arrivalAt
-      ? new Date(seg.arrivalAt)
-      : null;
-
-    duration = seg.duration || "—";
-  }
-
-  const travelDate = departureAt
-    ? departureAt.toLocaleDateString()
+  // Authoritative data from booking
+  const origin = booking.origin || "—";
+  const destination = booking.destination || "—";
+  const flightId = booking.flightId || "—";
+  const travelDate = booking.travelDate
+    ? new Date(booking.travelDate).toLocaleDateString()
     : "—";
 
+  // Optional provider metadata (nice-to-have)
+  const seg =
+    booking?.seatsMeta?.[0]?.segment ||
+    booking?.seatsMeta?.[0] ||
+    null;
+
+  const airlineCode = booking.airlineCode || "—";
+  const flightNumber = booking.flightNumber || "—";
+
+
+  const departureAt = seg?.departureAt
+    ? new Date(seg.departureAt)
+    : null;
+
+  const arrivalAt = seg?.arrivalAt
+    ? new Date(seg.arrivalAt)
+    : null;
+
+  const duration = seg?.duration || "—";
 
 
   // ---- Derived pricing (display only) ----
   const price = booking.price || {};
 
-  const derivedBaseFare =
-    Number(price.amount || 0)
-    - Number(price.tax || 0)
-    - Number(price.addonsTotal || 0)
-    + Number(price.discountsTotal || 0);
+  const baseFare =
+    Number(price?.breakdown?.seats) ||
+    (
+      Number(price.amount || 0)
+      - Number(price.tax || 0)
+      - Number(price.addonsTotal || 0)
+      + Number(price.discountsTotal || 0)
+    );
+
 
   // console.log("BOOKING OBJECT", booking);
   // console.log("SEATS META", booking.seatsMeta);
@@ -359,34 +356,41 @@ export default function BookingDetails() {
 
           {/* ------- DETAILS ------- */}
           <div className="mt-6 space-y-6">
-            {/* Flight Info
+            {/* ------- Flight Info ------- */}
             <div className="space-y-1">
               <div className="text-lg font-semibold text-white">
-                {flightName}
+                Flight: {airlineCode} {flightNumber}
               </div>
 
               <div className="text-sm text-slate-300">
-                {origin} → {destination}
+                Route: {booking.origin} → {booking.destination}
               </div>
 
               <div className="text-sm text-slate-400">
-                Departure:{" "}
-                {departureAt
-                  ? departureAt.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })
-                  : "—"}
-                {"  •  "}
-                Arrival:{" "}
-                {arrivalAt
-                  ? arrivalAt.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })
-                  : "—"}
+                Travel Date: {new Date(booking.travelDate).toLocaleDateString()}
               </div>
 
+              {(booking.departureAt || booking.arrivalAt) && (
+                <div className="text-sm text-slate-400">
+                  Departure:{" "}
+                  {booking.departureAt
+                    ? new Date(booking.departureAt).toLocaleTimeString([], {
+                      hour: "2-digit",
+                      minute: "2-digit",
+                    })
+                    : "—"}
+                  {"  •  "}
+                  Arrival:{" "}
+                  {booking.arrivalAt
+                    ? new Date(booking.arrivalAt).toLocaleTimeString([], {
+                      hour: "2-digit",
+                      minute: "2-digit",
+                    })
+                    : "—"}
+                </div>
+              )}
+            </div>
 
-              <div className="text-sm text-slate-400">
-                Date: {travelDate} {" • "} Duration: {duration}
-              </div>
-
-            </div> */}
 
             {/* Passengers */}
             <div>
@@ -425,14 +429,14 @@ export default function BookingDetails() {
             <div className="mt-6 border-t border-white/10 pt-4 space-y-2 text-sm">
               <Row
                 label="Base Fare (Seats & Class)"
-                value={derivedBaseFare}
+                value={baseFare}
               />
 
-              {booking.price.addonsTotal > 0 && (
+              {Number(booking.price?.addonsTotal || 0) > 0 && (
                 <Row label="Add-ons" value={booking.price.addonsTotal} />
               )}
 
-              {booking.price.discountsTotal > 0 && (
+              {Number(booking.price?.discountsTotal || 0) > 0 && (
                 <Row
                   label="Discounts"
                   value={-booking.price.discountsTotal}
@@ -440,14 +444,15 @@ export default function BookingDetails() {
                 />
               )}
 
-              {booking.price.tax > 0 && (
+              {Number(booking.price?.tax || 0) > 0 && (
                 <Row label="Taxes & Fees" value={booking.price.tax} />
               )}
+
 
               <div className="border-t border-white/10 pt-2 flex justify-between font-semibold text-white">
                 <span>Total Paid</span>
                 <span>
-                  ₹{Number(booking.price.amount).toLocaleString()}
+                  ₹{Number(booking.price?.amount || 0).toLocaleString()}
                 </span>
               </div>
             </div>
@@ -503,7 +508,8 @@ export default function BookingDetails() {
             />
             <button
               onClick={downloadPDF}
-              className="
+              disabled={!booking?.bookingRef}
+              className={`
     inline-flex items-center gap-2
     px-5 py-3 rounded-xl
     bg-gradient-to-r from-cyan-500 to-blue-600
@@ -511,11 +517,11 @@ export default function BookingDetails() {
     hover:from-cyan-400 hover:to-blue-500
     shadow-lg shadow-cyan-500/20
     transition-all
-  "
+    ${!booking?.bookingRef ? "opacity-50 cursor-not-allowed" : ""}
+  `}
             >
               ⬇ Download Ticket (PDF)
             </button>
-
 
 
           </div>

@@ -28,7 +28,11 @@ export default function AdminBookingDetails() {
     if (!window.confirm("Force cancel this booking? This will refund & restore seats.")) return;
     setBusy(true);
     try {
-      const res = await post(`/admin/bookings/${id}/cancel`, {});
+      const res = await post(`/admin/bookings/${id}/cancel`, {
+        refund: true,
+        restoreInventory: true,
+        reason: "Admin force cancellation"
+      });
       setBooking(res.booking || booking);
       alert("Booking cancelled");
     } catch (e) {
@@ -66,15 +70,16 @@ export default function AdminBookingDetails() {
             <div>Created: {new Date(booking.createdAt).toLocaleString()}</div>
           </div>
 
-          {booking.bookingStatus !== "CANCELLED" && (
-            <button
-              disabled={busy}
-              onClick={forceCancel}
-              className="mt-4 px-3 py-1 rounded bg-red-600 hover:bg-red-500 text-white"
-            >
-              {busy ? "Cancelling…" : "Force Cancel"}
-            </button>
-          )}
+          {booking.bookingStatus !== "CANCELLED" &&
+            booking.bookingStatus !== "REFUNDED" && (
+              <button
+                disabled={busy}
+                onClick={forceCancel}
+                className="mt-4 px-3 py-1 rounded bg-red-600 hover:bg-red-500 text-white"
+              >
+                {busy ? "Cancelling…" : "Force Cancel"}
+              </button>
+            )}
         </div>
 
         {/* MIDDLE */}
@@ -109,13 +114,46 @@ export default function AdminBookingDetails() {
         </div>
       </div>
 
-      {/* RAW DATA */}
+      {/* PROVIDER DETAILS */}
       <div className="panel-3d p-4 mt-6">
-        <h3 className="font-semibold mb-2">Raw Provider Response</h3>
-        <pre className="text-xs bg-black/40 p-3 rounded overflow-auto max-h-[300px]">
-          {JSON.stringify(booking.rawProviderResponse || {}, null, 2)}
-        </pre>
+        <h3 className="font-semibold mb-3">Provider Details</h3>
+
+        <div className="text-sm space-y-1">
+          <div>
+            Provider Booking ID:{" "}
+            <span className="font-mono text-slate-200">
+              {booking.providerBookingId || "—"}
+            </span>
+          </div>
+
+          {booking.rawProviderResponse?.ticketNumbers?.length > 0 && (
+            <div>
+              Tickets:
+              <ul className="list-disc ml-5 mt-1">
+                {booking.rawProviderResponse.ticketNumbers.map((t, i) => (
+                  <li key={i} className="font-mono">{t}</li>
+                ))}
+              </ul>
+            </div>
+          )}
+
+          {booking.paymentStatus && (
+            <div>Payment Status: {booking.paymentStatus}</div>
+          )}
+
+          {booking.refundInfo && (
+            <>
+              <div className="mt-2 font-medium">Refund Summary</div>
+              <div>Refund ID: {booking.refundInfo.id}</div>
+              <div>Status: {booking.refundInfo.status}</div>
+              <div>
+                Amount: ₹{Number(booking.refundInfo.amount / 100).toLocaleString()}
+              </div>
+            </>
+          )}
+        </div>
       </div>
+
     </div>
   );
 }

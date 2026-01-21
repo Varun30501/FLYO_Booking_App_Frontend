@@ -4,6 +4,8 @@ import SeatMap from './SeatMap';
 import { post, get } from '../services/api';
 import { getUser } from '../services/auth';
 import AddonSelector from './AddonSelector';
+import { useSearchParams } from 'react-router-dom';
+import { tr } from 'framer-motion/client';
 /**
  * BookingForm (patched - addons + coupons + profile mirror)
  * - fetches seat map for accurate pricing
@@ -58,6 +60,13 @@ function normalizeSeatClass(name = "") {
   return name.charAt(0).toUpperCase() + name.slice(1);
 }
 
+function seatLabel(s) {
+  if (!s) return '';
+  if (typeof s === 'string') return s;
+  if (typeof s === 'object') return s.seatId || s.label || '';
+  return '';
+}
+
 function formatRupee(amount) {
   try {
     const n = Number(amount || 0);
@@ -72,13 +81,36 @@ function formatRupee(amount) {
  *  Stored in localStorage so retries or accidental double clicks reuse the same key.
  */
 
-export default function BookingForm({ flight, onBooked }) {
+export default function BookingForm({ flight, travelDate: travelDateProp, origin, destination, onBooked }) {
+  const [searchParams] = useSearchParams();
+
+  const DAYS = Array.from({ length: 31 }, (_, i) => i + 1);
+  const MONTHS = [
+    'Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun',
+    'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'
+  ];
+  const YEARS = Array.from({ length: 100 }, (_, i) => new Date().getFullYear() - i);
+
+  // Resolve travelDate once, synchronously
+  const resolvedTravelDate =
+    travelDateProp ||
+    searchParams.get('date') ||
+    flight?.travelDate ||
+    flight?.departureDate ||
+    flight?.date ||
+    null;
+
+  const travelDate = resolvedTravelDate;
+
   const [step, setStep] = useState(1);
   const [seatCount, setSeatCount] = useState(1);
   const [selectedSeats, setSelectedSeats] = useState([]);
   const [seatMapVersion, setSeatMapVersion] = useState(0);
   const [holdStatus, setHoldStatus] = useState(null); // { ok, holdUntil, seats }
-  const [passengers, setPassengers] = useState([]);
+  const [passengers, setPassengers] = useState([
+    { name: '', age: '', gender: '' }
+  ]);
+
   const [contact, setContact] = useState({ name: '', email: '', phone: '' });
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState(null);
@@ -89,7 +121,7 @@ export default function BookingForm({ flight, onBooked }) {
   const [addons, setAddons] = useState([]); // from /api/addons
   const [coupons, setCoupons] = useState([]); // from /api/coupons
   const [selectedAddons, setSelectedAddons] = useState([]); // [{ offerId, qty }]
-  const [appliedCoupon, setAppliedCoupon] = useState(null); // coupon object
+  const [appliedCoupon, setAppliedCoupon] = useState(''); // coupon object
   const [couponInput, setCouponInput] = useState('');
   const [couponError, setCouponError] = useState('');
 
@@ -97,6 +129,37 @@ export default function BookingForm({ flight, onBooked }) {
   const [mapData, setMapData] = useState(null);
   const [mapLoading, setMapLoading] = useState(false);
   const flightIdForSeats = flight?._id || flight?.id || flight?.flightNumber;
+
+  const [passengerCriteria, setPassengerCriteria] = useState({
+    children: 0,
+    assistance: false
+  });
+
+  const hasRestrictedPassengers =
+    passengerCriteria.children > 0 || passengerCriteria.assistance;
+
+  const PASSENGER_DISCOUNTS = {
+    child: 0.25,      // 25% off seat price
+    disabled: 0.30    // 30% off seat price
+  };
+
+  function computeDiscountedSeatPrice(seatPrice, passenger) {
+    if (!passenger) return seatPrice;
+
+    let discountPct = 0;
+
+    if (passenger.passengerType === 'child') {
+      discountPct = PASSENGER_DISCOUNTS.child;
+    }
+
+    if (passenger.specialAssistance?.disabled) {
+      discountPct = Math.max(discountPct, PASSENGER_DISCOUNTS.disabled);
+    }
+
+    const discountAmount = seatPrice * discountPct;
+    return Math.round(seatPrice - discountAmount);
+  }
+
 
   // Keep passengers in sync with seatCount
   useEffect(() => {
@@ -111,7 +174,11 @@ export default function BookingForm({ flight, onBooked }) {
           gender: 'M',
           nationality: '',
           documentType: '',
-          documentNumber: ''
+          documentNumber: '',
+          passengerType: 'adult', // adult | child
+          specialAssistance: {
+            disabled: false
+          }
         });
       }
       return next;
@@ -171,24 +238,49 @@ export default function BookingForm({ flight, onBooked }) {
   // load seat map (for pricing) when flight changes or when remounted
   useEffect(() => {
     let mounted = true;
+
     async function load() {
-      if (!flightIdForSeats) { setMapData(null); return; }
-      setMapLoading(true);
+      if (!flightIdForSeats || !travelDate) {
+        setMapData(null);
+        return;
+      }
+
       try {
-        const resp = await get(`/seats/${encodeURIComponent(flightIdForSeats)}`).catch(() => null);
+        setMapLoading(true);
+
+        const resolvedOrigin =
+          origin ||
+          flight?.origin ||
+          flight?.itineraries?.[0]?.segments?.[0]?.departure?.iataCode;
+
+        const resolvedDestination =
+          destination ||
+          flight?.destination ||
+          flight?.itineraries?.[0]?.segments?.[0]?.arrival?.iataCode;
+
+        if (!resolvedOrigin || !resolvedDestination) {
+          setMapData(null);
+          return;
+        }
+
+        const resp = await get(
+          `/seats/${encodeURIComponent(flightIdForSeats)}?date=${encodeURIComponent(travelDate)}&origin=${encodeURIComponent(resolvedOrigin)}&destination=${encodeURIComponent(resolvedDestination)}`
+        );
+
         if (!mounted) return;
         setMapData(resp || null);
       } catch (e) {
         console.error('[BookingForm] seatmap load error', e);
-        setMapData(null);
+        if (mounted) setMapData(null);
       } finally {
         if (mounted) setMapLoading(false);
       }
     }
+
     load();
     return () => { mounted = false; };
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [flightIdForSeats, seatMapVersion]);
+  }, [flightIdForSeats, travelDate, seatMapVersion]);
+
 
   // derive base fare from flight or map
   const baseFare = useMemo(() => {
@@ -233,56 +325,43 @@ export default function BookingForm({ flight, onBooked }) {
   }, [mapData]);
 
   function computeSeatPriceNum(seatObj) {
-    try {
-      const s = seatObj || {};
-      const absoluteCandidates = [
-        s.price, s.absolutePrice, s.priceAbsolute,
-        s.absolute, s.amount
-      ];
-      let absolute = null;
-      for (const v of absoluteCandidates) {
-        if (typeof v === 'number' && !Number.isNaN(v)) { absolute = Number(v); break; }
-        if (typeof v === 'string' && v.trim() !== '') {
-          const cleaned = Number(String(v).replace(/[^\d.-]/g, '')) || null;
-          if (cleaned !== null && !Number.isNaN(cleaned) && cleaned !== 0) { absolute = cleaned; break; }
-        }
-      }
+    if (typeof seatObj?.price === 'number') return seatObj.price;
 
-      const seatPriceRaw = (typeof s.price === 'number' && s.price) ? s.price
-        : (typeof s.priceModifier === 'number' ? s.priceModifier : null);
+    const base = baseFare || perSeatPriceFallback || 0;
+    const modifier = Number(seatObj?.priceModifier || 0);
 
-      const rawClass = s.seatClass || s.category || s.class || '';
-      const seatClassLabel = normalizeSeatClass(rawClass);
-
-      const isEconomy = seatClassLabel === 'Economy';
-
-      if (absolute !== null) return Number(absolute);
-
-      if (isEconomy) {
-        if (baseFare && baseFare > 0) return Number(baseFare);
-        if (seatPriceRaw !== null) return Number(seatPriceRaw);
-        return Number(perSeatPriceFallback || 0);
-      }
-
-      const modifier = seatPriceRaw !== null ? Number(seatPriceRaw) : 0;
-      const base = Number(baseFare || perSeatPriceFallback || 0);
-      return Number(base + modifier);
-    } catch (e) {
-      return Number(perSeatPriceFallback || 0);
-    }
+    return base + modifier;
   }
+
 
   // compute prices for currently held/selected seats (ordered as selectedSeats)
   const computedSeatPrices = useMemo(() => {
-    return (selectedSeats || []).map(id => {
-      const s = seatById[String(id)] || { seatId: id };
-      const priceNum = computeSeatPriceNum(s);
-      return { seatId: id, price: priceNum, raw: s };
-    });
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [selectedSeats, seatById, baseFare, perSeatPriceFallback]);
+    return (selectedSeats || []).map((seatId, idx) => {
+      const seat = seatById[String(seatId)] || {};
+      const basePrice = computeSeatPriceNum(seat);
 
-  const seatsTotal = useMemo(() => computedSeatPrices.reduce((acc, cur) => acc + (Number(cur.price) || 0), 0), [computedSeatPrices]);
+      const passenger = passengers[idx];
+      const finalPrice = computeDiscountedSeatPrice(basePrice, passenger);
+
+      return {
+        seatId,
+        basePrice,
+        finalPrice,
+        passengerType: passenger?.passengerType || 'adult',
+        disabled: !!passenger?.specialAssistance?.disabled,
+        raw: seat
+      };
+    });
+  }, [selectedSeats, seatById, passengers, baseFare]);
+
+
+  const seatsTotal = useMemo(
+    () => computedSeatPrices.reduce((a, s) => a + s.finalPrice, 0),
+    [computedSeatPrices]
+  );
+
+  const hasChildPassenger = passengers.some(p => p.passengerType === 'child');
+  const hasDisabledPassenger = passengers.some(p => p.specialAssistance?.disabled);
 
   // ---------- ADDONS & COUPONS CALCULATION ----------
   function addonEffectiveAmount(addon) {
@@ -347,7 +426,11 @@ export default function BookingForm({ flight, onBooked }) {
           gender: 'M',
           nationality: '',
           documentType: '',
-          documentNumber: ''
+          documentNumber: '',
+          passengerType: 'adult', // adult | child
+          specialAssistance: {
+            disabled: false
+          }
         });
       }
       return next;
@@ -401,7 +484,16 @@ export default function BookingForm({ flight, onBooked }) {
   }
 
   function onSeatSelectionChange(arr) {
-    setSelectedSeats(arr || []);
+    const normalized = (arr || []).map(s =>
+      typeof s === 'object' ? s.seatId : s
+    );
+
+    const selectingExitRow = normalized.some(seatId => {
+      const seat = mapData?.seats?.find(s => s.seatId === seatId);
+      return Number(seat?.row) === 11 && seat?.seatClass === 'Economy';
+    });
+
+    setSelectedSeats(normalized);
   }
 
   // HOLD seats
@@ -416,7 +508,31 @@ export default function BookingForm({ flight, onBooked }) {
     const heldBy = getCurrentUserId();
 
     try {
-      const body = { seats: selectedSeats, holdMinutes: 10, heldBy };
+      const resolvedOrigin =
+        origin ||
+        flight?.origin ||
+        flight?.itineraries?.[0]?.segments?.[0]?.departure?.iataCode;
+
+      const resolvedDestination =
+        destination ||
+        flight?.destination ||
+        flight?.itineraries?.[0]?.segments?.[0]?.arrival?.iataCode;
+
+      if (!resolvedOrigin || !resolvedDestination) {
+        setError('Route information missing (origin/destination). Please refresh and try again.');
+        setBusy(false);
+        return;
+      }
+
+      const body = {
+        seats: selectedSeats.map(s => (typeof s === 'object' ? s.seatId : s)),
+        holdMinutes: 10,
+        heldBy,
+        travelDate,
+        origin: resolvedOrigin,
+        destination: resolvedDestination
+      };
+
       const resp = await post(`/seats/${encodeURIComponent(flightIdForSeats)}/hold`, body).catch(e => e?.response || e);
       const data = resp?.data ?? resp;
       if (!resp || (data && (data.error || data.success === false))) {
@@ -494,15 +610,19 @@ export default function BookingForm({ flight, onBooked }) {
 
   // ------------------ Proceed to booking & payment ------------------
   async function proceedToPayment(e) {
-    // const reval = await post('/flights/revalidate', {
-    //   offer: selectedFlight.raw   // ← this already exists from search
-    // });
 
-    // if (!reval.ok) {
-    //   setLoading(false);
-    //   alert('This flight is no longer available or the fare has changed.');
-    //   return;
-    // }
+    const resolvedOrigin =
+      origin ||
+      flight?.origin ||
+      flight?.itineraries?.[0]?.segments?.[0]?.departure?.iataCode ||
+      null;
+
+    const resolvedDestination =
+      destination ||
+      flight?.destination ||
+      flight?.itineraries?.[0]?.segments?.[0]?.arrival?.iataCode ||
+      null;
+
     e?.preventDefault?.();
     setError(null);
 
@@ -527,23 +647,78 @@ export default function BookingForm({ flight, onBooked }) {
 
     try {
       // attach seat to passengers
-      const passengerPayload = passengers.map((p, idx) => ({
-        ...p,
-        seat: (holdStatus && holdStatus.seats && holdStatus.seats[idx]) || selectedSeats[idx] || null
-      }));
+      const passengerPayload = passengers.map((p, idx) => {
+        const normalizedDob =
+          p.dob ||
+          (p.dobYear && p.dobMonth && p.dobDay
+            ? `${p.dobYear}-${String(p.dobMonth).padStart(2, '0')}-${String(p.dobDay).padStart(2, '0')}`
+            : null);
+
+        return {
+          ...p,
+          dob: normalizedDob, // ✅ backend-compatible
+          seat:
+            (holdStatus && holdStatus.seats && holdStatus.seats[idx]) ||
+            selectedSeats[idx] ||
+            null
+        };
+      });
+
 
       // Build seatsMetaToSend from computedSeatPrices (canonical UI values)
       const seatsMetaToSend = (computedSeatPrices || []).map(s => {
-        const seatClass = s.raw?.seatClass || s.raw?.class || s.raw?.category || null;
-        const priceModifier = typeof s.raw?.priceModifier === 'number' ? Number(s.raw.priceModifier) : 0;
-        const price = Math.round(Number(s.price || 0));
+        const rawSeat = s.raw || {};
+
+        const seatId = String(
+          s.seatId ||
+          rawSeat.seatId ||
+          rawSeat.label ||
+          rawSeat.id ||
+          ''
+        );
+
+        const seatClass =
+          rawSeat.seatClass ||
+          rawSeat.class ||
+          rawSeat.category ||
+          null;
+
+        const priceModifier =
+          typeof rawSeat.priceModifier === 'number'
+            ? Number(rawSeat.priceModifier)
+            : 0;
+
+        const basePrice = Math.max(
+          1,
+          Math.round(Number(s.basePrice || 0))
+        );
+
+        const finalPrice = Math.max(
+          1,
+          Math.round(Number(s.finalPrice || basePrice))
+        );
+
+        const discountApplied = Math.max(
+          0,
+          basePrice - finalPrice
+        );
+
         return {
-          seatId: String(s.seatId),
+          seatId,
           seatClass,
           priceModifier,
-          price
+
+          // 🔑 pricing clarity
+          basePrice,
+          finalPrice,
+          discountApplied,
+
+          // 🔑 passenger eligibility context
+          passengerType: s.passengerType || 'adult',
+          disabled: !!s.disabled
         };
       });
+
       const computedTotalFromSeats = seatsMetaToSend.reduce((acc, s) => acc + (Number(s.price || 0)), 0);
 
       // Build addons payload using UI-selected addons (same calc as UI)
@@ -577,8 +752,23 @@ export default function BookingForm({ flight, onBooked }) {
       const discountUI = Math.round(couponDiscount || 0);
       const taxUI = Math.round(taxes || 0);
 
-      const computedFinalTotal = Math.round(Math.max(0, seatsSubtotalUI + addonsTotalUI - discountUI + taxUI));
-      const perSeatToSend = Math.round((seatsMetaToSend.length ? (seatsSubtotalUI / Math.max(1, seatsMetaToSend.length)) : perSeatPriceFallback) || 0);
+      const computedFinalTotal = Math.round(
+        Math.max(
+          1, // 🔴 ensure non-zero booking price
+          seatsSubtotalUI + addonsTotalUI - discountUI + taxUI
+        )
+      );
+
+      const perSeatToSend = Math.round(
+        Math.max(
+          1,
+          seatsMetaToSend.length
+            ? (seatsSubtotalUI / Math.max(1, seatsMetaToSend.length))
+            : perSeatPriceFallback
+        )
+      );
+
+
 
       // Idempotency: ensure uniqueness per booking attempt
       // NOTE: your current getOrCreateIdempotencyKey() persists a single key in localStorage.
@@ -589,11 +779,43 @@ export default function BookingForm({ flight, onBooked }) {
         .toString(36)
         .slice(2, 10)}`;
 
+      // Normalize seats to always use seatId (SeatMap v2 compatible)
+      const normalizedSeatsForBooking = (
+        (holdStatus && holdStatus.seats) ||
+        selectedSeats ||
+        []
+      ).map(s => ({
+        seatId: typeof s === 'string' ? s : (s.seatId || s.label)
+      }));
+
+      if (!travelDate) {
+        setError('Travel date missing. Please restart booking.');
+        setBusy(false);
+        return;
+      }
+
+      const derivedAirlineCode =
+        flight.airlineCode ||
+        flight.carrierCode ||
+        flight.validatingAirlineCodes?.[0] ||
+        flight.itineraries?.[0]?.segments?.[0]?.carrierCode ||
+        flight.airline?.code ||
+        flight.airline?.iataCode;
+
+
       const bookingBody = {
         flightId: flight._id || flight.id || flight.flightNumber,
+        travelDate,
+        origin: resolvedOrigin,
+        destination: resolvedDestination,
+        airlineCode: derivedAirlineCode,
+        flightNumber: flight.flightNumber,
+
+        departureAt: flight.departureAt || flight.departureTime,
+        arrivalAt: flight.arrivalAt || flight.arrivalTime,
         passengers: passengerPayload,
         contact,
-        seats: (holdStatus && holdStatus.seats) || selectedSeats,
+        seats: normalizedSeatsForBooking,
         price: {
           amount: computedFinalTotal,
           perSeat: perSeatToSend,
@@ -613,6 +835,12 @@ export default function BookingForm({ flight, onBooked }) {
         heldBy: getCurrentUserId(),
         idempotencyKey // send so backend can dedupe
       };
+
+      if (!Number.isFinite(bookingBody.price?.amount) || bookingBody.price.amount <= 0) {
+        setError('Invalid booking price. Please reselect seats.');
+        setBusy(false);
+        return;
+      }
 
       // Create booking (server may create stripe session and return it)
       const res = await post(`/bookings?createSession=true`, bookingBody).catch(err => err?.response || err);
@@ -643,13 +871,13 @@ export default function BookingForm({ flight, onBooked }) {
         if (!Number.isNaN(serverAmount) && serverAmount !== amountToCharge) {
           console.warn('[BookingForm] amount mismatch - UI:', amountToCharge, 'server:', serverAmount);
         }
-        
+
         for (let i = 0; i < passengers.length; i++) {
           const p = passengers[i];
           if (!p.firstName || !p.lastName) {
             throw new Error(`Passenger ${i + 1}: Name required`);
           }
-          if (!p.dob) {
+          if (!p.dob && !(p.dobDay && p.dobMonth && p.dobYear)) {
             throw new Error(`Passenger ${i + 1}: DOB required`);
           }
           if (!p.documentType || !p.documentNumber) {
@@ -733,6 +961,7 @@ export default function BookingForm({ flight, onBooked }) {
           <div className={`px-3 py-1 rounded ${step === 1 ? 'bg-cyan-700 text-black' : 'bg-white/3'}`}>1. Seats count</div>
           <div className={`px-3 py-1 rounded ${step === 2 ? 'bg-cyan-700 text-black' : 'bg-white/3'}`}>2. Choose seats</div>
           <div className={`px-3 py-1 rounded ${step === 3 ? 'bg-cyan-700 text-black' : 'bg-white/3'}`}>3. Passengers & Add-ons</div>
+          <div className={`px-3 py-1 rounded ${step === 4 ? 'bg-cyan-700 text-black' : 'bg-white/3'}`}>4. Payment</div>
         </div>
 
         {step === 1 && (
@@ -755,13 +984,54 @@ export default function BookingForm({ flight, onBooked }) {
         {step === 2 && (
           <div className="space-y-3">
             <div className="text-sm text-slate-300">Select exactly <strong>{seatCount}</strong> seat(s) on the map below.</div>
+            <div className="p-3 mb-3 rounded bg-white/5">
+              <div className="text-sm text-slate-300 mb-2">
+                Passenger eligibility (affects exit-row seats)
+              </div>
+
+              <div className="flex gap-4 items-center text-sm">
+                <label className="flex items-center gap-2">
+                  <input
+                    type="checkbox"
+                    checked={passengerCriteria.children > 0}
+                    onChange={(e) =>
+                      setPassengerCriteria(c => ({
+                        ...c,
+                        children: e.target.checked ? 1 : 0
+                      }))
+                    }
+                  />
+                  Travelling with child
+                </label>
+
+                <label className="flex items-center gap-2">
+                  <input
+                    type="checkbox"
+                    checked={passengerCriteria.assistance}
+                    onChange={(e) =>
+                      setPassengerCriteria(c => ({
+                        ...c,
+                        assistance: e.target.checked
+                      }))
+                    }
+                  />
+                  Requires assistance
+                </label>
+              </div>
+            </div>
+
             <div className="mt-2">
               <SeatMap
                 key={`seatmap-${seatMapVersion}`}
                 flightId={flightIdForSeats}
+                travelDate={travelDate}
+                origin={origin}
+                destination={destination}
                 airline={flight?.airline || flight?.provider || (flight?.itineraries?.[0]?.segments?.[0]?.carrierCode)}
                 flightObj={flight}
                 maxSelectable={seatCount}
+                selectedSeats={selectedSeats}
+                hasRestrictedPassengers={hasRestrictedPassengers}
                 onSelectionChange={onSeatSelectionChange}
               />
             </div>
@@ -772,7 +1042,10 @@ export default function BookingForm({ flight, onBooked }) {
                 {busy ? 'Holding…' : `Select ${seatCount} seat(s)`}
               </button>
               <div className="text-sm text-slate-300 ml-4">
-                Selected: {selectedSeats.join(', ') || 'None'}
+                Selected: {(selectedSeats || [])
+                  .map(s => typeof s === 'object' ? s.seatId : s)
+                  .join(', ')
+                  || 'None'}
               </div>
             </div>
 
@@ -788,7 +1061,13 @@ export default function BookingForm({ flight, onBooked }) {
                 {passengers.map((p, idx) => (
                   <div key={idx} className="p-3 bg-white/3 rounded">
                     <div className="flex items-center justify-between mb-2">
-                      <div className="font-medium">Passenger {idx + 1} — Seat: {holdStatus?.seats?.[idx] || selectedSeats[idx] || '—'}</div>
+                      <div className="font-medium">Passenger {idx + 1} — Seat: {' '} {seatLabel(
+                        holdStatus?.seats?.[idx]
+                          ? holdStatus.seats[idx]
+                          : selectedSeats[idx]
+                      ) || '—'}
+
+                      </div>
                     </div>
 
                     <div className="grid grid-cols-1 md:grid-cols-3 gap-2">
@@ -799,17 +1078,108 @@ export default function BookingForm({ flight, onBooked }) {
                         <option>Dr</option>
                       </select>
 
-                      <input placeholder="First name" value={p.firstName} onChange={(e) => updatePassenger(idx, 'firstName', e.target.value)} className="dark-input p-2 rounded" required />
-                      <input placeholder="Last name" value={p.lastName} onChange={(e) => updatePassenger(idx, 'lastName', e.target.value)} className="dark-input p-2 rounded" required />
-                      <input placeholder="Date of birth (YYYY-MM-DD)" value={p.dob} onChange={(e) => updatePassenger(idx, 'dob', e.target.value)} className="dark-input p-2 rounded" />
+                      <input placeholder="First name" value={p.firstName || ''} onChange={(e) => updatePassenger(idx, 'firstName', e.target.value)} className="dark-input p-2 rounded" required />
+                      <input placeholder="Last name" value={p.lastName || ''} onChange={(e) => updatePassenger(idx, 'lastName', e.target.value)} className="dark-input p-2 rounded" required />
+                      <div className="grid grid-cols-3 gap-2">
+                        <select
+                          value={p.dobDay || ''}
+                          onChange={(e) => updatePassenger(idx, 'dobDay', e.target.value)}
+                          className="dark-input p-2 rounded"
+                        >
+                          <option value="">Day</option>
+                          {DAYS.map(d => <option key={d} value={d}>{d}</option>)}
+                        </select>
+
+                        <select
+                          value={p.dobMonth || ''}
+                          onChange={(e) => updatePassenger(idx, 'dobMonth', e.target.value)}
+                          className="dark-input p-2 rounded"
+                        >
+                          <option value="">Month</option>
+                          {MONTHS.map((m, i) => <option key={m} value={i + 1}>{m}</option>)}
+                        </select>
+
+                        <select
+                          value={p.dobYear || ''}
+                          onChange={(e) => updatePassenger(idx, 'dobYear', e.target.value)}
+                          className="dark-input p-2 rounded"
+                        >
+                          <option value="">Year</option>
+                          {YEARS.map(y => <option key={y} value={y}>{y}</option>)}
+                        </select>
+                      </div>
+                      <div className="flex gap-4 mt-2 text-sm">
+                        {/* Passenger type */}
+                        <div className="flex gap-2 items-center">
+                          <span className="text-slate-400">Type:</span>
+                          <button
+                            type="button"
+                            onClick={() => updatePassenger(idx, 'passengerType', 'adult')}
+                            className={`px-3 py-1 rounded ${p.passengerType === 'adult'
+                              ? 'bg-cyan-600 text-black'
+                              : 'border border-white/12'
+                              }`}
+                          >
+                            Adult
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => updatePassenger(idx, 'passengerType', 'child')}
+                            className={`px-3 py-1 rounded ${p.passengerType === 'child'
+                              ? 'bg-green-600 text-black'
+                              : 'border border-white/12'
+                              }`}
+                          >
+                            Child
+                          </button>
+                        </div>
+
+                        {/* Assistance */}
+                        <label className="flex items-center gap-2 ml-6">
+                          <input
+                            type="checkbox"
+                            checked={!!p.specialAssistance?.disabled}
+                            onChange={(e) =>
+                              updatePassenger(idx, 'specialAssistance', {
+                                disabled: e.target.checked
+                              })
+                            }
+                          />
+                          <span className="text-slate-300">Requires assistance</span>
+                        </label>
+                      </div>
+
+
                       <select value={p.gender} onChange={(e) => updatePassenger(idx, 'gender', e.target.value)} className="dark-input p-2 rounded">
                         <option value="M">Male</option>
                         <option value="F">Female</option>
                         <option value="O">Other</option>
                       </select>
-                      <input placeholder="Nationality" value={p.nationality} onChange={(e) => updatePassenger(idx, 'nationality', e.target.value)} className="dark-input p-2 rounded" />
-                      <input placeholder="Document type (passport/aadhar/etc)" value={p.documentType} onChange={(e) => updatePassenger(idx, 'documentType', e.target.value)} className="dark-input p-2 rounded" />
-                      <input placeholder="Document number" value={p.documentNumber} onChange={(e) => updatePassenger(idx, 'documentNumber', e.target.value)} className="dark-input p-2 rounded" />
+                      <select
+                        value={p.nationality}
+                        onChange={(e) => updatePassenger(idx, 'nationality', e.target.value)}
+                        className="dark-input p-2 rounded"
+                      >
+                        <option value="">Nationality</option>
+                        <option value="IN">India</option>
+                        <option value="US">United States</option>
+                        <option value="UK">United Kingdom</option>
+                        <option value="AE">UAE</option>
+                      </select>
+
+                      <select
+                        value={p.documentType}
+                        onChange={(e) => updatePassenger(idx, 'documentType', e.target.value)}
+                        className="dark-input p-2 rounded"
+                      >
+                        <option value="">Document Type</option>
+                        <option value="passport">Passport</option>
+                        <option value="aadhar">Aadhaar</option>
+                        <option value="pan">PAN</option>
+                        <option value="driving_license">Driving License</option>
+                      </select>
+
+                      <input placeholder="Document number" value={p.documentNumber || ''} onChange={(e) => updatePassenger(idx, 'documentNumber', e.target.value)} className="dark-input p-2 rounded" />
                     </div>
                   </div>
                 ))}
@@ -854,7 +1224,7 @@ export default function BookingForm({ flight, onBooked }) {
               <div className="mt-4">
                 <div className="text-sm text-slate-300 mb-2">Coupons</div>
                 <div className="flex gap-2 items-center">
-                  <input value={couponInput} onChange={(e) => setCouponInput(e.target.value)} placeholder="Enter coupon code or select from list" className="dark-input p-2 rounded flex-1" />
+                  <input value={couponInput || ''} onChange={(e) => setCouponInput(e.target.value)} placeholder="Enter coupon code or select from list" className="dark-input p-2 rounded flex-1" />
                   <button type="button" onClick={() => applyCouponByCode(couponInput)} className="px-3 py-1 rounded border border-white/12">Apply</button>
                 </div>
                 {couponError && <div className="text-sm text-red-400 mt-2">{couponError}</div>}
@@ -922,10 +1292,38 @@ export default function BookingForm({ flight, onBooked }) {
               <div className="space-y-2">
                 {computedSeatPrices.map((s) => (
                   <div key={s.seatId} className="flex justify-between text-sm">
-                    <div>{s.seatId} {normalizeSeatClass((s.raw && (s.raw.seatClass || s.raw.class || s.raw.category)) || '')}</div>
-                    <div className="font-medium">{formatRupee(s.price)}</div>
+                    <div>
+                      {s.seatId}
+                      {s.passengerType === 'child' && (
+                        <span className="ml-2 text-xs text-green-400">Child fare</span>
+                      )}
+                      {s.disabled && (
+                        <span className="ml-2 text-xs text-blue-400">Assistance fare</span>
+                      )}
+                    </div>
+
+                    <div className="text-right">
+                      {s.basePrice !== s.finalPrice && (
+                        <div className="text-xs line-through text-slate-400">
+                          {formatRupee(s.basePrice)}
+                        </div>
+                      )}
+                      <div className="font-medium">
+                        {formatRupee(s.finalPrice)}
+                      </div>
+                    </div>
                   </div>
                 ))}
+
+                {(hasChildPassenger || hasDisabledPassenger) && (
+                  <div style={{
+                    marginTop: 10,
+                    fontSize: 12,
+                    color: '#facc15'
+                  }}>
+                    ⚠ Some seats (exit row / extra-legroom) may not be suitable for child or assisted passengers.
+                  </div>
+                )}
 
                 {selectedAddons.map(sel => {
                   const off = addons.find(a => String(a.id) === String(sel.offerId) || String(a.code) === String(sel.offerId));
@@ -977,9 +1375,9 @@ export default function BookingForm({ flight, onBooked }) {
             <div>
               <h4 className="font-semibold mb-2">Contact details</h4>
               <div className="grid grid-cols-1 md:grid-cols-3 gap-2">
-                <input className="dark-input p-2 rounded" placeholder="Full name" value={contact.name} onChange={(e) => setContact({ ...contact, name: e.target.value })} required />
-                <input className="dark-input p-2 rounded" placeholder="Email" value={contact.email} onChange={(e) => setContact({ ...contact, email: e.target.value })} required type="email" />
-                <input className="dark-input p-2 rounded" placeholder="Phone" value={contact.phone} onChange={(e) => setContact({ ...contact, phone: e.target.value })} />
+                <input className="dark-input p-2 rounded" placeholder="Full name" value={contact.name || ''} onChange={(e) => setContact({ ...contact, name: e.target.value })} required />
+                <input className="dark-input p-2 rounded" placeholder="Email" value={contact.email || ''} onChange={(e) => setContact({ ...contact, email: e.target.value })} required type="email" />
+                <input className="dark-input p-2 rounded" placeholder="Phone" value={contact.phone || ''} onChange={(e) => setContact({ ...contact, phone: e.target.value })} />
               </div>
             </div>
 

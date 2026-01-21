@@ -15,7 +15,7 @@ import Modal from "./Modal";
  * The component extracts a Stripe-like refund object if present and renders
  * a user-friendly summary instead of raw JSON.
  */
-export default function BookingCancelled({ open = false, onClose = () => {}, booking = null, refundInfo = null }) {
+export default function BookingCancelled({ open = false, onClose = () => { }, booking = null, refundInfo = null }) {
   const bookingRef = booking?.bookingRef || booking?.ref || booking?._id || booking?.id || "—";
   const paidAmount = booking?.price?.amount ?? booking?.price ?? null;
   const paidCurrency = (booking?.price?.currency || (booking?.price && booking.price.currency) || "INR").toUpperCase();
@@ -74,18 +74,18 @@ export default function BookingCancelled({ open = false, onClose = () => {}, boo
     typeof refund?.amount === "number"
       ? refund.amount
       : typeof refund?.amountSmallest === "number"
-      ? refund.amountSmallest
-      : typeof refund?.amount_smallest === "number"
-      ? refund.amount_smallest
-      : null;
+        ? refund.amountSmallest
+        : typeof refund?.amount_smallest === "number"
+          ? refund.amount_smallest
+          : null;
   const refundCurrency = (refund?.currency || paidCurrency || "INR").toUpperCase();
   const refundAmountDisplay = refundAmtSmall !== null ? formatCurrencyFromSmallest(refundAmtSmall, refundCurrency) : paidAmount ? `${paidCurrency} ${paidAmount}` : null;
   const refundReason = refund?.reason || refund?.failure_reason || refund?.failureReason || null;
   const refundCreated = refund?.created
     ? (typeof refund.created === "number" ? new Date(refund.created * (String(refund.created).length === 10 ? 1000 : 1)) : new Date(refund.created))
     : refund?.createdAt
-    ? new Date(refund.createdAt)
-    : null;
+      ? new Date(refund.createdAt)
+      : null;
 
   // common small row
   function Row({ label, children }) {
@@ -114,15 +114,55 @@ export default function BookingCancelled({ open = false, onClose = () => {}, boo
 
         {/* main refunded amount block */}
         <div className="mt-5 bg-gradient-to-b from-white/3 to-white/2 p-4 rounded-xl">
-          <div className="text-xs text-slate-400">Refund</div>
+          <div className="text-xs text-slate-400">Refund summary</div>
+
           <div className="mt-1 text-2xl font-bold text-white">
             {refundAmountDisplay || "—"}
           </div>
+
+          {/* Breakdown */}
+          <div className="mt-3 space-y-1 text-sm text-slate-300">
+            {paidAmount !== null && (
+              <div className="flex justify-between">
+                <span>Amount paid</span>
+                <span>{paidCurrency} {paidAmount}</span>
+              </div>
+            )}
+
+            {booking?.cancellationFeeMajor != null && (
+              <div className="flex justify-between">
+                <span>Cancellation fee</span>
+                <span className="text-red-400">
+                  − {paidCurrency} {booking.cancellationFeeMajor}
+                </span>
+              </div>
+            )}
+
+            {refundAmountDisplay && (
+              <div className="flex justify-between font-medium text-white pt-1 border-t border-white/10">
+                <span>Refund amount</span>
+                <span>{refundAmountDisplay}</span>
+              </div>
+            )}
+          </div>
+
           {refundStatus && (
-            <div className="mt-2">
-              <span className="inline-block text-xs px-2 py-1 rounded bg-slate-700 text-white uppercase">{refundStatus}</span>
+            <div className="mt-3">
+              <span className="inline-block text-xs px-2 py-1 rounded bg-slate-700 text-white uppercase">
+                {refundStatus}
+              </span>
             </div>
           )}
+          {refundStatus && (
+            <div className="mt-2 text-xs text-slate-400">
+              {refundStatus === "pending" || refundStatus === "processing"
+                ? "Refund has been initiated. Amount will reflect in your account in 5–7 business days."
+                : refundStatus === "succeeded"
+                  ? "Refund completed. Amount will be credited to your account within 2 to 3 business days."
+                  : "Refund status recorded."}
+            </div>
+          )}
+
         </div>
 
         {/* details grid */}
@@ -142,16 +182,71 @@ export default function BookingCancelled({ open = false, onClose = () => {}, boo
           {/* fallback friendly server-info block when we couldn't extract refund object */}
           {!refund && refundInfo && (
             <div className="mt-2 p-3 bg-white/5 rounded text-xs text-slate-300">
-              <div className="font-medium mb-1">Refund / server info</div>
-              <pre className="whitespace-pre-wrap break-words text-[11px]">{typeof refundInfo === "string" ? refundInfo : JSON.stringify(refundInfo, null, 2)}</pre>
+              <div className="font-medium mb-1">Refund initiated</div>
+              <div>
+                Your booking has been cancelled successfully.
+                Refund processing has started and details will be available within 5 to 7 days.
+              </div>
             </div>
           )}
         </div>
 
         {/* actions */}
         <div className="mt-6 flex justify-center gap-3">
-          <button onClick={onClose} className="px-4 py-2 rounded border border-white/12">Close</button>
+          <button
+            onClick={async () => {
+              try {
+                const res = await fetch(
+                  `${import.meta.env.VITE_API_BASE_URL || "http://localhost:4000"}/api/bookings/${bookingRef}/refund.pdf`,
+                  { credentials: "include" }
+                );
+                if (!res.ok) throw new Error("Failed to download refund receipt");
+
+                const buffer = await res.arrayBuffer();
+                const blob = new Blob([buffer], { type: "application/pdf" });
+                const url = window.URL.createObjectURL(blob);
+
+                const a = document.createElement("a");
+                a.href = url;
+                a.download = `refund-${bookingRef}.pdf`;
+                document.body.appendChild(a);
+                a.click();
+                a.remove();
+                window.URL.revokeObjectURL(url);
+              } catch (e) {
+                alert("Unable to download refund receipt");
+              }
+            }}
+            className="px-4 py-2 rounded bg-slate-700 hover:bg-slate-600 text-white"
+          >
+            Download refund receipt
+          </button>
+
+          <button
+            onClick={async () => {
+              try {
+                await fetch(
+                  `${import.meta.env.VITE_API_BASE_URL || "http://localhost:4000"}/api/bookings/${bookingRef}/resend-refund-confirmation`,
+                  { method: "POST", credentials: "include" }
+                );
+                alert("Refund confirmation email sent");
+              } catch {
+                alert("Failed to resend refund email");
+              }
+            }}
+            className="px-4 py-2 rounded bg-slate-800 hover:bg-slate-700 text-white"
+          >
+            Resend refund email
+          </button>
+
+          <button
+            onClick={onClose}
+            className="px-4 py-2 rounded border border-white/12"
+          >
+            Close
+          </button>
         </div>
+
       </div>
     </Modal>
   );

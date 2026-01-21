@@ -2,7 +2,7 @@
 import React, { useState, useEffect, useMemo, useRef } from "react";
 import { useLocation } from "react-router-dom";
 import dayjs from "dayjs";
-
+import { useSearchParams } from "react-router-dom";
 import FlightSearchForm from "../components/FlightSearchForm";
 import { searchFlights } from "../services/flightsService";
 import FlightCard from "../components/FlightCard";
@@ -29,6 +29,8 @@ export default function SearchPage() {
   const [activeDate, setActiveDate] = useState(prefill?.date || null);
   const [dateAnchor, setDateAnchor] = useState(prefill?.date || null);
 
+  const [searchParams] = useSearchParams();
+  const date = searchParams.get("date");
 
   /* 🔹 NEW: stable date strip + price cache */
   const [dates, setDates] = useState([]);
@@ -48,12 +50,12 @@ export default function SearchPage() {
   /* ---------------- DATE STRIP INIT (ONCE) ---------------- */
 
   useEffect(() => {
-    if (!activeDate) return;
+    if (!dateAnchor) return;
 
-    const base = dayjs(activeDate);
+    const base = dayjs(dateAnchor);
 
-    const d = Array.from({ length: 7 }).map((_, i) => {
-      const date = base.add(i - 3, "day");
+    const d = Array.from({ length: 14 }).map((_, i) => {
+      const date = base.add(i, "day");
       return {
         date: date.format("YYYY-MM-DD"),
         label: date.format("ddd, DD MMM"),
@@ -61,7 +63,8 @@ export default function SearchPage() {
     });
 
     setDates(d);
-  }, [activeDate]);
+  }, [dateAnchor]);
+
 
 
   function scrollDates(dir) {
@@ -360,7 +363,12 @@ export default function SearchPage() {
         ) : (
           <>
             <SelectedFlightCard flight={selected} />
-            <BookingForm flight={selected} />
+            <BookingForm
+              flight={selected}
+              travelDate={activeDate}
+              origin={lastSearch?.origin}
+              destination={lastSearch?.destination}
+            />
           </>
         )}
       </Modal>
