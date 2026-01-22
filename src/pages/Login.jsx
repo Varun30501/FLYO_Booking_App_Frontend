@@ -58,7 +58,7 @@ export default function Login({ onAuthChange }) {
   }
 
   return (
-    <AuthModal open={true} onClose={() => navigate('/')} title="Welcome back" bgImage="/hero-bg.png">
+    <AuthModal open={true} onClose={() => navigate('/')} title="Welcome" bgImage="/hero-bg.png">
       <form onSubmit={handleSubmit} className="space-y-4 w-full max-w-md">
         <div>
           <label className="text-sm text-slate-200">Email</label>

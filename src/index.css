@@ -238,3 +238,19 @@ select.dark-select option {
     opacity: 0;
   }
 }
+
+
+/* ===============================
+   MOBILE SAFETY FIXES
+   =============================== */
+@media (max-width: 1024px) {
+  .panel-3d {
+    position: relative !important;
+    top: auto !important;
+  }
+
+  .app-shell {
+    padding-left: 0.75rem;
+    padding-right: 0.75rem;
+  }
+}

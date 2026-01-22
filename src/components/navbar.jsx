@@ -4,7 +4,7 @@ import { Link, useNavigate, useLocation } from "react-router-dom";
 import { getToken, logout, getUser } from "../services/auth";
 
 function Initials({ name = "", size = 32 }) {
-  const parts = (name || "").trim().split(/\s+/).slice(0,2);
+  const parts = (name || "").trim().split(/\s+/).slice(0, 2);
   const initials = (parts.length === 0) ? "U" : parts.map(p => p[0]?.toUpperCase()).join("");
   return (
     <div
@@ -35,6 +35,12 @@ export default function NavBar({ onAuthChange }) {
     return () => window.removeEventListener("scroll", onScroll);
   }, []);
 
+  const [mobileOpen, setMobileOpen] = useState(false);
+
+
+
+
+
   function doLogout() {
     logout();
     if (onAuthChange) onAuthChange();
@@ -50,9 +56,8 @@ export default function NavBar({ onAuthChange }) {
 
   return (
     <nav
-      className={`fixed top-0 left-0 w-full h-14 z-50 transition-all duration-300 ${
-        scrolled ? "backdrop-blur-md bg-[rgba(6,8,24,0.70)] shadow-lg border-b border-white/8" : "bg-[linear-gradient(90deg,#0b1535,#0d1941/0.9)]"
-      }`}
+      className={`fixed top-0 left-0 w-full h-14 z-50 transition-all duration-300 ${scrolled ? "backdrop-blur-md bg-[rgba(6,8,24,0.70)] shadow-lg border-b border-white/8" : "bg-[linear-gradient(90deg,#0b1535,#0d1941/0.9)]"
+        }`}
       aria-label="Main navigation"
     >
       <div className="max-w-7xl mx-auto px-4 h-full flex items-center justify-between">
@@ -74,6 +79,27 @@ export default function NavBar({ onAuthChange }) {
 
         {/* Right section */}
         <div className="flex items-center gap-4">
+          {/* Mobile menu button */}
+          <button
+            onClick={() => setMobileOpen(!mobileOpen)}
+            className="md:hidden p-2 rounded-md hover:bg-white/10 text-white"
+            aria-label="Toggle navigation menu"
+          >
+            <svg
+              xmlns="http://www.w3.org/2000/svg"
+              className="h-6 w-6"
+              fill="none"
+              viewBox="0 0 24 24"
+              stroke="currentColor"
+            >
+              {mobileOpen ? (
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+              ) : (
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 6h16M4 12h16M4 18h16" />
+              )}
+            </svg>
+          </button>
+
           {/* Profile */}
           <Link to="/profile" className="flex items-center gap-3 bg-white/6 px-3 py-1 rounded-md hover:bg-white/10 transition">
             {user?.avatar ? (
@@ -113,6 +139,55 @@ export default function NavBar({ onAuthChange }) {
           </button>
         </div>
       </div>
+      {/* Mobile dropdown menu */}
+      {/* Mobile dropdown menu (animated, non-fullscreen) */}
+      <div
+        className={`
+    md:hidden absolute top-14 left-0 w-full
+    bg-[rgba(6,8,24,0.95)] backdrop-blur-md
+    border-t border-white/10
+    transform transition-all duration-300 ease-out
+    ${mobileOpen
+            ? "opacity-100 translate-y-0"
+            : "opacity-0 -translate-y-3 pointer-events-none"}
+  `}
+      >
+        <div className="flex flex-col px-4 py-3 gap-3">
+          <Link
+            to="/dashboard"
+            onClick={() => setMobileOpen(false)}
+            className={activeClass("/dashboard")}
+          >
+            Dashboard
+          </Link>
+
+          <Link
+            to="/search"
+            onClick={() => setMobileOpen(false)}
+            className={activeClass("/search")}
+          >
+            Search
+          </Link>
+
+          <Link
+            to="/bookings"
+            onClick={() => setMobileOpen(false)}
+            className={activeClass("/bookings")}
+          >
+            My Bookings
+          </Link>
+
+          <Link
+            to="/support"
+            onClick={() => setMobileOpen(false)}
+            className={activeClass("/support")}
+          >
+            Support
+          </Link>
+        </div>
+      </div>
     </nav>
+
+
   );
 }

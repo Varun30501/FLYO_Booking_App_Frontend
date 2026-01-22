@@ -1,7 +1,7 @@
 // src/components/FiltersPanel.jsx
 import React, { useState } from 'react';
 
-export default function FiltersPanel({ onChange = () => {} }) {
+export default function FiltersPanel({ onChange = () => { } }) {
   const [stops, setStops] = useState({ nonstop: false, one: false, twoPlus: false });
   const [fare, setFare] = useState('regular');
 
@@ -17,7 +17,7 @@ export default function FiltersPanel({ onChange = () => {} }) {
   }
 
   return (
-    <div className="panel-3d p-4 rounded-md sticky top-20">
+    <div className="panel-3d p-4 rounded-md lg:sticky lg:top-20">
       <h4 className="text-white font-semibold mb-2">Filters</h4>
 
       <div className="mb-4">

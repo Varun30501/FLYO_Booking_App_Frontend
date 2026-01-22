@@ -47,6 +47,9 @@ export default function SearchPage() {
   const [highlightId, setHighlightId] = useState(null);
   const dateStripRef = useRef(null);
 
+  const [mobileFiltersOpen, setMobileFiltersOpen] = useState(false);
+
+
   /* ---------------- DATE STRIP INIT (ONCE) ---------------- */
 
   useEffect(() => {
@@ -274,6 +277,13 @@ export default function SearchPage() {
                   {filteredResults.length} flights found
                 </div>
 
+                <button
+                  onClick={() => setMobileFiltersOpen(v => !v)}
+                  className="lg:hidden px-3 py-2 rounded-md bg-white/10 text-sm text-white"
+                >
+                  Filters
+                </button>
+
                 <select
                   value={sort}
                   onChange={(e) => setSort(e.target.value)}
@@ -290,6 +300,26 @@ export default function SearchPage() {
                   <option value="duration">Shortest duration</option>
                 </select>
               </div>
+
+              {/* Mobile filters panel */}
+              {mobileFiltersOpen && (
+                <div className="lg:hidden mb-4">
+                  <FlightFilters
+                    flights={filteredResults}
+                    filters={filters}
+                    onChange={setFilters}
+                    onPickFlight={(f) => {
+                      const id = f._id;
+                      document.getElementById(id)?.scrollIntoView({
+                        behavior: "smooth",
+                        block: "center",
+                      });
+                      setHighlightId(id);
+                      setTimeout(() => setHighlightId(null), 1200);
+                    }}
+                  />
+                </div>
+              )}
 
               {/* Date strip */}
               <div className="

@@ -1,5 +1,6 @@
 // src/components/FlightFilters.jsx
-import React, { useMemo } from "react";
+import React, { useMemo, useState } from "react";
+
 
 /* ---- helpers ---- */
 function durationMinutes(f) {
@@ -17,6 +18,7 @@ export default function FlightFilters({
   onPickFlight,
   onTimeFilter,
 }) {
+  const [mobileOpen, setMobileOpen] = useState(false);
   /* ---------------- AIRLINES ---------------- */
   const airlines = useMemo(() => {
     const set = new Set();
@@ -49,6 +51,7 @@ export default function FlightFilters({
     });
   }
 
+  
   /* ---------------- INSIGHTS ---------------- */
   const insights = useMemo(() => {
     if (!flights.length) return null;
@@ -70,6 +73,9 @@ export default function FlightFilters({
     const minD = Math.min(...dursArr);
     const maxD = Math.max(...dursArr);
 
+    
+
+
     function score(e) {
       const p = (e.price - minP) / Math.max(1, maxP - minP);
       const d = (e.duration - minD) / Math.max(1, maxD - minD);
@@ -82,156 +88,171 @@ export default function FlightFilters({
   }, [flights]);
 
   return (
-    <div className="panel-3d p-4 sticky top-20 hidden lg:block">
-      <h4 className="text-white font-semibold">Filters & Insights</h4>
+    <div className="panel-3d p-4 lg:sticky lg:top-20">
+      {/* Mobile filter toggle */}
+      <button
+        onClick={() => setMobileOpen(v => !v)}
+        className="lg:hidden w-full mb-3 px-4 py-2 rounded-md bg-white/10 text-white text-sm"
+      >
+        {mobileOpen ? "Hide filters" : "Show filters"}
+      </button>
 
-      {/* -------- AIRLINES -------- */}
-      <section>
-        <div className="text-sm text-slate-300 mb-2">Airlines</div>
-        <div className="space-y-2">
-          {airlines.map((a) => (
-            <label key={a} className="flex items-center gap-2 text-sm">
+      <h4 className="text-white font-semibold">Filters & Insights</h4>
+      <div
+        className={`
+    transition-all duration-300 ease-out
+    ${mobileOpen ? "block animate-slide-up" : "hidden lg:block"}
+  `}
+      >
+
+        {/* -------- AIRLINES -------- */}
+        <section>
+          <div className="text-sm text-slate-300 mb-2">Airlines</div>
+          <div className="space-y-2">
+            {airlines.map((a) => (
+              <label key={a} className="flex items-center gap-2 text-sm">
+                <input
+                  type="checkbox"
+                  checked={filters.airlines.includes(a)}
+                  onChange={() => toggleArray("airlines", a)}
+                />
+                <span className="px-2 py-1 rounded bg-white/10 text-white text-xs">
+                  {a}
+                </span>
+              </label>
+            ))}
+          </div>
+        </section>
+
+        {/* -------- STOPS -------- */}
+        <section>
+          <div className="text-sm text-slate-300 mb-2">Stops</div>
+          {["0", "1", "2+"].map((s) => (
+            <label key={s} className="flex items-center gap-2 text-sm">
               <input
                 type="checkbox"
-                checked={filters.airlines.includes(a)}
-                onChange={() => toggleArray("airlines", a)}
+                checked={filters.stops.includes(s)}
+                onChange={() => toggleArray("stops", s)}
               />
-              <span className="px-2 py-1 rounded bg-white/10 text-white text-xs">
-                {a}
-              </span>
+              {s === "0" ? "Non-stop" : s === "1" ? "1 stop" : "2+ stops"}
             </label>
           ))}
+        </section>
+
+        {/* -------- PRICE -------- */}
+        <section>
+          <div className="text-sm text-slate-300 mb-2">
+            Price (₹{filters.priceRange[0]} – ₹{filters.priceRange[1]})
+          </div>
+          <input
+            type="range"
+            min={prices.min}
+            max={prices.max}
+            value={filters.priceRange[1]}
+            onChange={(e) =>
+              onChange((prev) => ({
+                ...prev,
+                priceRange: [prev.priceRange[0], Number(e.target.value)],
+              }))
+            }
+            className="w-full"
+          />
+        </section>
+
+        {/* -------- INSIGHTS -------- */}
+        {insights && (
+          <>
+            <section className="pt-3 border-t border-white/10">
+              <InsightCard
+                label="Cheapest"
+                value={`₹${insights.cheapest.price}`}
+                onClick={() => onPickFlight?.(insights.cheapest.flight)}
+              />
+              <InsightCard
+                label="Fastest"
+                value={`${Math.floor(insights.fastest.duration / 60)}h ${insights.fastest.duration % 60
+                  }m`}
+                onClick={() => onPickFlight?.(insights.fastest.flight)}
+              />
+              <InsightCard
+                label="Best value"
+                value={`₹${insights.bestValue.price}`}
+                highlight
+                onClick={() => onPickFlight?.(insights.bestValue.flight)}
+              />
+            </section>
+
+            <PriceTrendBar flights={flights} />
+
+            <section className="pt-3 border-t border-white/10">
+              <div className="text-sm text-slate-300 mb-2">Departure time</div>
+              <div className="grid grid-cols-2 gap-2">
+                {["early", "morning", "afternoon", "evening"].map((b) => (
+                  <button
+                    key={b}
+                    onClick={() => onTimeFilter?.(b)}
+                    className="px-3 py-2 rounded bg-white/5 text-sm hover:bg-white/10"
+                  >
+                    {b}
+                  </button>
+                ))}
+              </div>
+            </section>
+          </>
+        )}
         </div>
-      </section>
-
-      {/* -------- STOPS -------- */}
-      <section>
-        <div className="text-sm text-slate-300 mb-2">Stops</div>
-        {["0", "1", "2+"].map((s) => (
-          <label key={s} className="flex items-center gap-2 text-sm">
-            <input
-              type="checkbox"
-              checked={filters.stops.includes(s)}
-              onChange={() => toggleArray("stops", s)}
-            />
-            {s === "0" ? "Non-stop" : s === "1" ? "1 stop" : "2+ stops"}
-          </label>
-        ))}
-      </section>
-
-      {/* -------- PRICE -------- */}
-      <section>
-        <div className="text-sm text-slate-300 mb-2">
-          Price (₹{filters.priceRange[0]} – ₹{filters.priceRange[1]})
-        </div>
-        <input
-          type="range"
-          min={prices.min}
-          max={prices.max}
-          value={filters.priceRange[1]}
-          onChange={(e) =>
-            onChange((prev) => ({
-              ...prev,
-              priceRange: [prev.priceRange[0], Number(e.target.value)],
-            }))
-          }
-          className="w-full"
-        />
-      </section>
-
-      {/* -------- INSIGHTS -------- */}
-      {insights && (
-        <>
-          <section className="pt-3 border-t border-white/10">
-            <InsightCard
-              label="Cheapest"
-              value={`₹${insights.cheapest.price}`}
-              onClick={() => onPickFlight?.(insights.cheapest.flight)}
-            />
-            <InsightCard
-              label="Fastest"
-              value={`${Math.floor(insights.fastest.duration / 60)}h ${insights.fastest.duration % 60
-                }m`}
-              onClick={() => onPickFlight?.(insights.fastest.flight)}
-            />
-            <InsightCard
-              label="Best value"
-              value={`₹${insights.bestValue.price}`}
-              highlight
-              onClick={() => onPickFlight?.(insights.bestValue.flight)}
-            />
-          </section>
-
-          <PriceTrendBar flights={flights} />
-
-          <section className="pt-3 border-t border-white/10">
-            <div className="text-sm text-slate-300 mb-2">Departure time</div>
-            <div className="grid grid-cols-2 gap-2">
-              {["early", "morning", "afternoon", "evening"].map((b) => (
-                <button
-                  key={b}
-                  onClick={() => onTimeFilter?.(b)}
-                  className="px-3 py-2 rounded bg-white/5 text-sm hover:bg-white/10"
-                >
-                  {b}
-                </button>
-              ))}
-            </div>
-          </section>
-        </>
-      )}
-    </div>
-  );
+      </div>
+      );
 }
 
-/* ---------------- UI bits ---------------- */
+      /* ---------------- UI bits ---------------- */
 
-function InsightCard({ label, value, highlight, onClick }) {
+      function InsightCard({label, value, highlight, onClick}) {
   return (
-    <button
-      onClick={onClick}
-      className={`
+      <button
+        onClick={onClick}
+        className={`
         w-full text-left rounded-lg p-3 mb-2 transition
         ${highlight ? "bg-cyan-500/10 border border-cyan-400/30" : "bg-white/5"}
         hover:bg-white/10
       `}
-    >
-      <div className="text-xs text-slate-400">{label}</div>
-      <div className="text-lg text-white font-semibold">{value}</div>
-    </button>
-  );
+      >
+        <div className="text-xs text-slate-400">{label}</div>
+        <div className="text-lg text-white font-semibold">{value}</div>
+      </button>
+      );
 }
 
-function PriceTrendBar({ flights }) {
+      function PriceTrendBar({flights}) {
   const prices = flights
     .map((f) => Number(f?.price?.amount || 0))
-    .filter(Boolean)
+      .filter(Boolean)
     .sort((a, b) => a - b);
 
-  if (!prices.length) return null;
+      if (!prices.length) return null;
 
-  const min = prices[0];
-  const max = prices[prices.length - 1];
+      const min = prices[0];
+      const max = prices[prices.length - 1];
 
-  return (
-    <section>
-      <div className="text-sm text-slate-300 mb-2">Price trend</div>
-      <div className="flex gap-1">
-        {prices.slice(0, 20).map((p, i) => (
-          <div
-            key={i}
-            className="h-6 w-2 rounded"
-            style={{
-              background: `rgba(34,211,238,${0.3 + ((p - min) / Math.max(1, max - min)) * 0.6
-                })`,
-            }}
-          />
-        ))}
-      </div>
-      <div className="flex justify-between text-xs text-slate-400 mt-1">
-        <span>₹{min}</span>
-        <span>₹{max}</span>
-      </div>
-    </section>
-  );
+      return (
+      <section>
+        <div className="text-sm text-slate-300 mb-2">Price trend</div>
+        <div className="flex gap-1">
+          {prices.slice(0, 20).map((p, i) => (
+            <div
+              key={i}
+              className="h-6 w-2 rounded"
+              style={{
+                background: `rgba(34,211,238,${0.3 + ((p - min) / Math.max(1, max - min)) * 0.6
+                  })`,
+              }}
+            />
+          ))}
+        </div>
+        <div className="flex justify-between text-xs text-slate-400 mt-1">
+          <span>₹{min}</span>
+          <span>₹{max}</span>
+        </div>
+      </section>
+      );
 }
